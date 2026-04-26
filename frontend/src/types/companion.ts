@@ -36,6 +36,9 @@ export interface Companion {
     hygiene?: number;
     immunity?: number;
     is_sick?: boolean;
+    is_alive?: boolean;
+    overall?: number;
+    level?: number;
     disease?: string;
     symptoms?: string[];
     severity?: number;

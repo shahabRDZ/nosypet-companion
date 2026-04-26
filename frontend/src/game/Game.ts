@@ -28,11 +28,23 @@ import {
     Status,
 } from "./BehaviorTree";
 import { Creature } from "./Creature";
+import { Garden, type GardenLayout } from "./Garden";
+import { Kitchen, type KitchenLayout } from "./Kitchen";
 import { ParticleSystem } from "./Particles";
 import { Room, type RoomLayout } from "./Room";
 import type { ActionName, CreatureState, RoomBounds } from "./types";
 
-type SceneKind = "bedroom" | "bathroom";
+type SceneKind = "bedroom" | "bathroom" | "kitchen" | "garden";
+
+interface SceneEntry {
+    container: Container;
+    fxLayer: Container;
+    fgLayer: Container;
+    floorY: number;
+    width: number;
+    height: number;
+    update?: (dt: number, isNight: boolean) => void;
+}
 
 interface GameBlackboard extends BlackboardLike {
     state: CreatureState;
@@ -49,7 +61,8 @@ export class Game {
     private rootContainer: Container;
     private room!: Room;
     private bathroom!: Bathroom;
-    private bathroomMounted = false;
+    private kitchen!: Kitchen;
+    private garden!: Garden;
     private currentScene: SceneKind = "bedroom";
     private fadeOverlay!: Graphics;
     private creature!: Creature;
@@ -99,8 +112,11 @@ export class Game {
         this.rootContainer.addChild(this.room.container);
         this.rootContainer.addChild(this.creature.container);
 
-        // Bathroom is created on demand at first wash.
+        // Build the other three scenes lazily but immediately so
+        // scene transitions are instant (no async load).
         this.bathroom = new Bathroom(this.computeBathroomLayout(layout));
+        this.kitchen = new Kitchen(this.computeKitchenLayout(layout));
+        this.garden = new Garden(this.computeGardenLayout(layout));
 
         // Fade overlay for scene transitions.
         this.fadeOverlay = new Graphics();
@@ -212,34 +228,52 @@ export class Game {
 
     public feed(): Promise<void> {
         return this.enqueue(async () => {
-            const layout = this.room.layout;
-            this.blackboard.target = { x: layout.bowlPos.x, y: layout.bowlPos.y + 10, arrivedRadius: 18, arrived: false };
+            await this.slideToScene("kitchen");
+            const layout = this.kitchen.layout;
+            this.creature.setPosition(60, layout.floorY + 30);
+            this.creature.setFacing(1);
+            this.blackboard.target = {
+                x: layout.bowlPos.x - 20, y: layout.floorY + 30, arrivedRadius: 8, arrived: false,
+            };
             await this.waitForArrival();
             if (!this.isReady()) return;
-            this.creature.playAction("eat", 2000);
+            this.creature.playAction("eat", 2400);
             this.bbState.hunger = Math.min(100, this.bbState.hunger + 25);
-            this.particles.emit({
-                x: this.creature.container.x, y: this.creature.container.y - 30,
-                text: "🍞", count: 3, lifeMs: 1200,
-            });
-            await this.wait(2000);
+            for (let i = 0; i < 4; i++) {
+                this.particles.emit({
+                    x: this.creature.container.x + 10, y: this.creature.container.y - 20,
+                    text: "🍞", count: 1, lifeMs: 900,
+                });
+                await this.wait(450);
+            }
+            await this.slideToScene("bedroom");
+            this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
         });
     }
 
     public play(): Promise<void> {
         return this.enqueue(async () => {
-            const layout = this.room.layout;
-            this.blackboard.target = { x: layout.toyPos.x, y: layout.toyPos.y + 6, arrivedRadius: 18, arrived: false };
+            await this.slideToScene("garden");
+            const layout = this.garden.layout;
+            this.creature.setPosition(60, layout.floorY + 30);
+            this.creature.setFacing(1);
+            this.blackboard.target = {
+                x: layout.toyPos.x - 20, y: layout.floorY + 30, arrivedRadius: 8, arrived: false,
+            };
             await this.waitForArrival();
             if (!this.isReady()) return;
             this.creature.playAction("play_with_toy", 2500);
             this.bbState.happiness = Math.min(100, this.bbState.happiness + 25);
             this.bbState.energy = Math.max(0, this.bbState.energy - 10);
-            this.particles.emit({
-                x: this.creature.container.x, y: this.creature.container.y - 30,
-                text: "❤️", count: 4, lifeMs: 1300,
-            });
-            await this.wait(2500);
+            for (let i = 0; i < 5; i++) {
+                this.particles.emit({
+                    x: this.creature.container.x, y: this.creature.container.y - 30,
+                    text: "❤️", count: 1, lifeMs: 1200,
+                });
+                await this.wait(280);
+            }
+            await this.slideToScene("bedroom");
+            this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
         });
     }
 
@@ -281,14 +315,11 @@ export class Game {
      *  rub cycles with bubble particles, shake-off, transition back. */
     public wash(): Promise<void> {
         return this.enqueue(async () => {
-            await this.fadeTo(0.85);
-            this.switchScene("bathroom");
-            // Move creature to entry position in the bathroom.
+            await this.slideToScene("bathroom");
             const layout = this.bathroom.layout;
             this.creature.setPosition(layout.width * 0.18, layout.floorY + 30);
             this.creature.setFacing(1);
             this.bathroom.setWaterLevel(0);
-            await this.fadeTo(0);
 
             // Walk over to the tub.
             this.blackboard.target = {
@@ -347,11 +378,8 @@ export class Game {
             // Drain water as the creature walks away.
             await this.animateValue(1, 0, 600, (v) => this.bathroom.setWaterLevel(v));
 
-            // Fade back to bedroom.
-            await this.fadeTo(0.85);
-            this.switchScene("bedroom");
+            await this.slideToScene("bedroom");
             this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
-            await this.fadeTo(0);
             this.bbState.hygiene = Math.min(100, this.bbState.hygiene + 40);
         });
     }
@@ -416,7 +444,8 @@ export class Game {
             const h = new Date().getHours();
             return h >= 20 || h < 6;
         })();
-        this.room.update(deltaMs, isNight);
+        const scene = this.getSceneEntry(this.currentScene);
+        scene.update?.(deltaMs, isNight);
         this.tree.tick(deltaMs, this.blackboard);
         if (this.cursor) {
             const local = this.creature.container.toLocal({ x: this.cursor.x, y: this.cursor.y });
@@ -456,32 +485,55 @@ export class Game {
         });
     }
 
-    /** Cross-fade between scenes via the overlay. */
-    private fadeTo(alpha: number): Promise<void> {
-        const from = this.fadeOverlay.alpha;
-        return this.animateValue(from, alpha, 280, (v) => {
-            this.fadeOverlay.alpha = v;
-        });
+    private getSceneEntry(kind: SceneKind): SceneEntry {
+        if (kind === "bedroom") return {
+            container: this.room.container, fxLayer: this.room.fxLayer, fgLayer: this.room.fgLayer,
+            floorY: this.room.layout.floorY, width: this.room.layout.width, height: this.room.layout.height,
+            update: (dt, n) => this.room.update(dt, n),
+        };
+        if (kind === "bathroom") return {
+            container: this.bathroom.container, fxLayer: this.bathroom.fxLayer, fgLayer: this.bathroom.fgLayer,
+            floorY: this.bathroom.layout.floorY, width: this.bathroom.layout.width, height: this.bathroom.layout.height,
+        };
+        if (kind === "kitchen") return {
+            container: this.kitchen.container, fxLayer: this.kitchen.fxLayer, fgLayer: this.kitchen.fgLayer,
+            floorY: this.kitchen.layout.floorY, width: this.kitchen.layout.width, height: this.kitchen.layout.height,
+        };
+        return {
+            container: this.garden.container, fxLayer: this.garden.fxLayer, fgLayer: this.garden.fgLayer,
+            floorY: this.garden.layout.floorY, width: this.garden.layout.width, height: this.garden.layout.height,
+            update: (dt) => this.garden.update(dt),
+        };
     }
 
-    private switchScene(kind: SceneKind): void {
+    /** Slide transition: old scene exits left, new scene enters from
+     *  right. More cinematic than a fade. */
+    private async slideToScene(kind: SceneKind): Promise<void> {
         if (kind === this.currentScene) return;
-        if (kind === "bathroom") {
-            this.rootContainer.removeChild(this.room.container);
-            if (!this.bathroomMounted) {
-                this.bathroom.fxLayer.addChild(this.particles.container);
-                this.bathroomMounted = true;
-            } else {
-                this.bathroom.fxLayer.addChild(this.particles.container);
-            }
-            this.rootContainer.addChildAt(this.bathroom.container, 0);
-            this.blackboard.bounds = this.computeBathroomBounds();
-        } else {
-            this.rootContainer.removeChild(this.bathroom.container);
-            this.room.fxLayer.addChild(this.particles.container);
-            this.rootContainer.addChildAt(this.room.container, 0);
-            this.blackboard.bounds = this.computeBounds(this.room.layout);
-        }
+        const oldEntry = this.getSceneEntry(this.currentScene);
+        const newEntry = this.getSceneEntry(kind);
+        const w = newEntry.width;
+
+        // Stage the new scene off-screen to the right.
+        newEntry.container.x = w;
+        newEntry.fxLayer.addChild(this.particles.container);
+        this.rootContainer.addChildAt(newEntry.container, 0);
+
+        await this.animateValue(0, 1, 420, (t) => {
+            const eased = 1 - Math.pow(1 - t, 3);
+            oldEntry.container.x = -w * eased;
+            newEntry.container.x = w * (1 - eased);
+        });
+
+        try { this.rootContainer.removeChild(oldEntry.container); } catch { /* */ }
+        oldEntry.container.x = 0;
+        newEntry.container.x = 0;
+        this.blackboard.bounds = {
+            minX: 60,
+            maxX: newEntry.width - 60,
+            minY: newEntry.floorY + 14,
+            maxY: newEntry.height - 30,
+        };
         this.currentScene = kind;
     }
 
@@ -499,13 +551,21 @@ export class Game {
         };
     }
 
-    private computeBathroomBounds(): RoomBounds {
-        const layout = this.bathroom.layout;
+    private computeKitchenLayout(roomLayout: RoomLayout): KitchenLayout {
         return {
-            minX: 60,
-            maxX: layout.width - 60,
-            minY: layout.floorY + 14,
-            maxY: layout.height - 30,
+            width: roomLayout.width,
+            height: roomLayout.height,
+            floorY: roomLayout.floorY,
+            bowlPos: { x: roomLayout.width * 0.5, y: roomLayout.floorY + (roomLayout.height - roomLayout.floorY) * 0.55 },
+        };
+    }
+
+    private computeGardenLayout(roomLayout: RoomLayout): GardenLayout {
+        return {
+            width: roomLayout.width,
+            height: roomLayout.height,
+            floorY: roomLayout.floorY,
+            toyPos: { x: roomLayout.width * 0.5, y: roomLayout.floorY + (roomLayout.height - roomLayout.floorY) * 0.6 },
         };
     }
 
