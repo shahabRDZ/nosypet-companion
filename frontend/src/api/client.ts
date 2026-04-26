@@ -7,7 +7,9 @@
  */
 import type {
     Certificate,
+    ChatReply,
     Companion,
+    MemoryEntry,
     Session,
 } from "../types/companion";
 
@@ -86,6 +88,21 @@ export const api = {
     certificate: () => request<Certificate>("/companion/certificate/"),
     rename: (body: { name: string }) =>
         request<Companion>("/companion/rename/", { method: "POST", body: JSON.stringify(body) }),
+
+    // Actions
+    feed:  () => request<Companion>("/companion/feed/",  { method: "POST" }),
+    play:  () => request<Companion>("/companion/play/",  { method: "POST" }),
+    sleep: () => request<Companion>("/companion/sleep/", { method: "POST" }),
+    pet:   () => request<Companion>("/companion/pet/",   { method: "POST" }),
+    wash:  () => request<Companion>("/companion/wash/",  { method: "POST" }),
+    heal:  (kind: "medicine" | "soup" | "vet" = "medicine") =>
+        request<Companion>("/companion/heal/", { method: "POST", body: JSON.stringify({ kind }) }),
+    revive: () => request<Companion>("/companion/revive/", { method: "POST" }),
+
+    // Chat & memories
+    chat: (message: string) =>
+        request<ChatReply>("/companion/chat/", { method: "POST", body: JSON.stringify({ message }) }),
+    memories: () => request<{ memories: MemoryEntry[] }>("/companion/memories/"),
 
     verify: (uniqueCode: string) =>
         request<{ verified: boolean }>(`/verify/${encodeURIComponent(uniqueCode)}/`),

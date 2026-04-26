@@ -28,6 +28,34 @@ export interface Companion {
     phenotype: Phenotype;
     archetype: string | null;
     is_in_coma: boolean;
+
+    // Phase 3 additions (present on /me, optional on hatch response)
+    hunger?: number;
+    happiness?: number;
+    energy?: number;
+    hygiene?: number;
+    immunity?: number;
+    is_sick?: boolean;
+    disease?: string;
+    symptoms?: string[];
+    severity?: number;
+    hours_since_interaction?: number;
+    traits?: Record<string, number>;
+    archetype_locked?: string | null;
+    archetype_locked_at?: string | null;
+}
+
+export interface ChatReply {
+    reply: string;
+    facts_learned: number;
+    in_coma: boolean;
+}
+
+export interface MemoryEntry {
+    fact_type: string;
+    key: string;
+    value: string;
+    confidence: number;
 }
 
 export interface Certificate {

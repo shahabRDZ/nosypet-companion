@@ -199,6 +199,35 @@ export class Game {
         this.creature.say(text, durationMs);
     }
 
+    /**
+     * Update the creature's mood/state from the server. Lets the
+     * server be authoritative for hunger/happiness/energy/sickness
+     * while the client still drives spontaneous animation.
+     */
+    public applyServerState(s: {
+        hunger?: number;
+        happiness?: number;
+        energy?: number;
+        hygiene?: number;
+        is_sick?: boolean;
+        is_in_coma?: boolean;
+    }): void {
+        if (s.hunger !== undefined) this.bbState.hunger = s.hunger;
+        if (s.happiness !== undefined) this.bbState.happiness = s.happiness;
+        if (s.energy !== undefined) this.bbState.energy = s.energy;
+        if (s.hygiene !== undefined) this.bbState.hygiene = s.hygiene;
+        if (s.is_sick !== undefined) this.bbState.sick = s.is_sick;
+        if (s.is_in_coma !== undefined) this.bbState.inComa = s.is_in_coma;
+    }
+
+    public emitSneeze(): void {
+        this.creature.playAction("sneeze", 1100);
+        this.particles.emit({
+            x: this.creature.container.x, y: this.creature.container.y - 30,
+            text: "💧", count: 1,
+        });
+    }
+
     public getStateSnapshot(): CreatureState {
         return { ...this.bbState };
     }
