@@ -1,55 +1,74 @@
 /**
- * Skeleton-based creature.
+ * Anatomic skeleton creature with two-segment limbs.
  *
- * Each body part is its own PIXI.Container with its own pivot, so the
- * character can have a real walk cycle, head bob, tail secondary
- * motion, arm swings, and ear flicks that all compose naturally.
- *
- * Hierarchy:
+ * Hierarchy (each level is a Container with its own pivot):
  *
  *   character
- *     shadow            (on the ground, tracks body breath)
- *     tail              (behind body)
- *     leftLeg / rightLeg (animated alternately during walk)
- *     body              (rocks side to side during walk)
- *       torso + belly + pattern
- *       leftArm / rightArm
- *       head            (bobs counter to body, hosts eyes / mouth / ears)
+ *     shadow
+ *     tail (secondary motion, behind body)
+ *     leftThigh                   pivot at hip
+ *       leftShin                  pivot at knee
+ *         leftFoot                pivot at ankle
+ *     rightThigh / rightShin / rightFoot   (mirrored)
+ *     body                        pivot at hip joint
+ *       torso
+ *       belly + pattern
+ *       leftShoulder              pivot at shoulder
+ *         leftForearm             pivot at elbow
+ *           leftPaw
+ *       rightShoulder / rightForearm / rightPaw
+ *       head                      pivot at neck
+ *         (ears, eyes, brows, lids, cheeks, mouth, antenna, nose)
  *
- * Public API matches the previous Creature so Game.ts integration is
- * unchanged: setPosition, setFacing, playAction, lookAt, say, update.
+ * The two-segment limbs let the walk cycle have a real knee bend
+ * (heel strike: leg extends; recovery: knee bends as the leg lifts).
+ * Arms get an elbow bend too. Idle adds gentle breathing, slow head
+ * settle, occasional ear twitches and a roving gaze.
  */
 import { Container, Graphics, Text } from "pixi.js";
 
 import type { Phenotype } from "../types/companion";
 import type { ActionName, CreatureState } from "./types";
 
-const W = 80;       // body half-width
-const H = 70;       // body half-height
-const HEAD_R = 38;  // head radius
+const W = 64;        // half torso width
+const H = 56;        // half torso height
+const HEAD_R = 46;   // head radius (intentionally large for chibi-cute)
+const NECK_OFFSET = -H * 0.6;
+const HIP_W = W * 0.32;     // x-distance of leg from centre
+const SHOULDER_W = W * 0.62;
+const THIGH_LEN = 16;
+const SHIN_LEN = 16;
+const UPPER_ARM_LEN = 16;
+const FOREARM_LEN = 16;
 
 export class Creature {
     public readonly container: Container;
 
     private shadow: Graphics;
     private tail: Container;
-    private body: Container;
+
+    // Lower body (full hierarchy for IK-lite walk)
+    private leftThigh: Container;  private leftShin: Container;  private leftFoot: Container;
+    private rightThigh: Container; private rightShin: Container; private rightFoot: Container;
+
+    private body: Container;          // torso + arms + head all pivot here
+    private torsoG: Graphics;
+    private bellyG: Graphics;
+    private pattern: Graphics | null = null;
+
+    // Arms with elbow bend
+    private leftShoulder: Container;  private leftForearm: Container;  private leftPaw: Container;
+    private rightShoulder: Container; private rightForearm: Container; private rightPaw: Container;
+
     private head: Container;
-    private leftLeg: Container;
-    private rightLeg: Container;
-    private leftArm: Container;
-    private rightArm: Container;
-    private leftEar: Container;
-    private rightEar: Container;
-    private leftEye: Graphics;
-    private rightEye: Graphics;
-    private leftPupil: Graphics;
-    private rightPupil: Graphics;
-    private leftLid: Graphics;
-    private rightLid: Graphics;
+    private leftEar: Container;  private rightEar: Container;
+    private leftEye: Graphics;   private rightEye: Graphics;
+    private leftPupil: Graphics; private rightPupil: Graphics;
+    private leftLid: Graphics;   private rightLid: Graphics;
+    private leftBrow: Graphics;  private rightBrow: Graphics;
     private mouth: Graphics;
-    private cheekL: Graphics;
-    private cheekR: Graphics;
+    private nose: Graphics;
+    private cheekL: Graphics;    private cheekR: Graphics;
 
     private speechBubble: Container;
     private speechText: Text;
@@ -59,6 +78,9 @@ export class Creature {
     private currentAction: ActionName = "idle";
     private actionTimer = 0;
     private blinkTimer = Math.random() * 3000;
+    private idleGazeTimer = 0;
+    private idleGazeTarget = { x: 0, y: 0 };
+    private earTwitchTimer = 4000;
     private facing: 1 | -1 = 1;
     private speechVisibleUntil = 0;
     private gazeX = 0;
@@ -69,42 +91,79 @@ export class Creature {
         this.container = new Container();
         this.container.sortableChildren = true;
 
-        this.shadow = new Graphics();
-        this.shadow.zIndex = 0;
-        this.tail = new Container();
-        this.tail.zIndex = 1;
-        this.leftLeg = new Container();   this.leftLeg.zIndex = 2;
-        this.rightLeg = new Container();  this.rightLeg.zIndex = 2;
-        this.body = new Container();      this.body.zIndex = 3;
-        this.head = new Container();      this.head.zIndex = 4;
-        this.leftArm = new Container();   this.leftArm.zIndex = 5;
-        this.rightArm = new Container();  this.rightArm.zIndex = 5;
+        this.shadow = new Graphics();   this.shadow.zIndex = 0;
+        this.tail   = new Container();  this.tail.zIndex = 1;
 
-        this.container.addChild(
-            this.shadow, this.tail,
-            this.leftLeg, this.rightLeg,
-            this.body, this.leftArm, this.rightArm,
-            this.head,
-        );
+        // Build left and right leg chains.
+        const buildLeg = (xOffset: number) => {
+            const thigh = new Container();
+            thigh.x = xOffset;
+            thigh.y = H * 0.55;
+            thigh.zIndex = 2;
+            const shin = new Container();
+            shin.y = THIGH_LEN;
+            const foot = new Container();
+            foot.y = SHIN_LEN;
+            shin.addChild(foot);
+            thigh.addChild(shin);
+            return { thigh, shin, foot };
+        };
+        const left = buildLeg(-HIP_W);
+        const right = buildLeg(HIP_W);
+        this.leftThigh = left.thigh;   this.leftShin = left.shin;   this.leftFoot = left.foot;
+        this.rightThigh = right.thigh; this.rightShin = right.shin; this.rightFoot = right.foot;
 
-        this.leftEar = new Container();
-        this.rightEar = new Container();
-        this.leftEye = new Graphics();
-        this.rightEye = new Graphics();
-        this.leftPupil = new Graphics();
-        this.rightPupil = new Graphics();
-        this.leftLid = new Graphics();
-        this.rightLid = new Graphics();
+        this.body = new Container();
+        this.body.zIndex = 3;
+        this.torsoG = new Graphics();
+        this.bellyG = new Graphics();
+        this.body.addChild(this.torsoG, this.bellyG);
+
+        // Arms — two-segment, child of body so they move with torso rock.
+        const buildArm = (xOffset: number) => {
+            const shoulder = new Container();
+            shoulder.x = xOffset;
+            shoulder.y = -H * 0.05;
+            const forearm = new Container();
+            forearm.y = UPPER_ARM_LEN;
+            const paw = new Container();
+            paw.y = FOREARM_LEN;
+            forearm.addChild(paw);
+            shoulder.addChild(forearm);
+            return { shoulder, forearm, paw };
+        };
+        const lArm = buildArm(-SHOULDER_W);
+        const rArm = buildArm(SHOULDER_W);
+        this.leftShoulder = lArm.shoulder;   this.leftForearm = lArm.forearm;   this.leftPaw = lArm.paw;
+        this.rightShoulder = rArm.shoulder;  this.rightForearm = rArm.forearm;  this.rightPaw = rArm.paw;
+        this.body.addChild(this.leftShoulder, this.rightShoulder);
+
+        this.head = new Container();
+        this.head.y = NECK_OFFSET;
+        this.body.addChild(this.head);
+
+        this.leftEar = new Container();   this.rightEar = new Container();
+        this.leftEye = new Graphics();    this.rightEye = new Graphics();
+        this.leftPupil = new Graphics();  this.rightPupil = new Graphics();
+        this.leftLid = new Graphics();    this.rightLid = new Graphics();
+        this.leftBrow = new Graphics();   this.rightBrow = new Graphics();
         this.mouth = new Graphics();
-        this.cheekL = new Graphics();
-        this.cheekR = new Graphics();
+        this.nose = new Graphics();
+        this.cheekL = new Graphics();     this.cheekR = new Graphics();
         this.head.addChild(
             this.leftEar, this.rightEar,
             this.leftEye, this.rightEye,
             this.leftPupil, this.rightPupil,
             this.leftLid, this.rightLid,
+            this.leftBrow, this.rightBrow,
             this.cheekL, this.cheekR,
-            this.mouth,
+            this.nose, this.mouth,
+        );
+
+        this.container.addChild(
+            this.shadow, this.tail,
+            this.leftThigh, this.rightThigh,
+            this.body,
         );
 
         this.speechBubble = new Container();
@@ -121,6 +180,8 @@ export class Creature {
         this.draw();
     }
 
+    /* ---------------- public API ---------------- */
+
     public setPosition(x: number, y: number): void {
         this.container.x = x;
         this.container.y = y;
@@ -129,14 +190,13 @@ export class Creature {
     public setFacing(dir: 1 | -1): void {
         if (dir === this.facing) return;
         this.facing = dir;
+        // Mirror by flipping the body (with everything beneath it) and
+        // swapping leg/arm offsets via the existing transform.
         const flip = dir;
         this.body.scale.x = flip;
-        this.head.scale.x = flip;
         this.tail.scale.x = flip;
-        this.leftArm.scale.x = flip;
-        this.rightArm.scale.x = flip;
-        this.leftLeg.scale.x = flip;
-        this.rightLeg.scale.x = flip;
+        this.leftThigh.scale.x = flip;
+        this.rightThigh.scale.x = flip;
     }
 
     public playAction(name: ActionName, durationMs = 1500): void {
@@ -145,30 +205,31 @@ export class Creature {
     }
 
     public lookAt(localX: number, localY: number): void {
-        const tx = Math.max(-3.2, Math.min(3.2, localX / 50));
-        const ty = Math.max(-2.5, Math.min(2.5, (localY + 70) / 60));
+        const tx = Math.max(-3.5, Math.min(3.5, localX / 40));
+        const ty = Math.max(-2.8, Math.min(2.8, (localY + 70) / 50));
         this.gazeX = tx;
         this.gazeY = ty;
+        this.idleGazeTimer = 4000;  // overrides the wandering gaze for a bit
     }
 
     public say(text: string, durationMs = 3000): void {
         this.speechText.text = text;
-        const padding = 8;
-        const w = Math.min(180, this.speechText.width + padding * 2);
+        const padding = 10;
+        const w = Math.min(190, this.speechText.width + padding * 2);
         const h = this.speechText.height + padding * 2;
         this.speechBg.clear();
-        this.speechBg.roundRect(0, 0, w, h, 10).fill({ color: 0xffffff, alpha: 0.96 });
+        this.speechBg.roundRect(0, 0, w, h, 12).fill({ color: 0xffffff, alpha: 0.97 });
         this.speechBg.stroke({ color: 0x222244, width: 1, alpha: 0.6 });
         this.speechBg.moveTo(w / 2 - 6, h)
             .lineTo(w / 2 + 6, h)
             .lineTo(w / 2,    h + 8)
             .closePath()
-            .fill({ color: 0xffffff, alpha: 0.96 })
+            .fill({ color: 0xffffff, alpha: 0.97 })
             .stroke({ color: 0x222244, width: 1, alpha: 0.6 });
         this.speechText.x = padding;
         this.speechText.y = padding;
         this.speechBubble.x = -w / 2;
-        this.speechBubble.y = -H * 1.6 * this.phenotype.size_modifier - h - 28;
+        this.speechBubble.y = NECK_OFFSET - HEAD_R - h - 30;
         this.speechBubble.visible = true;
         this.speechVisibleUntil = performance.now() + durationMs;
     }
@@ -180,30 +241,52 @@ export class Creature {
     public update(deltaMs: number, state: CreatureState): void {
         this.elapsed += deltaMs;
         this.blinkTimer -= deltaMs;
+        this.idleGazeTimer -= deltaMs;
+        this.earTwitchTimer -= deltaMs;
         const t = this.elapsed / 1000;
 
-        const lerp = 0.2;
-        this.leftPupil.x  = lerp * this.gazeX + (1 - lerp) * this.leftPupil.x;
-        this.leftPupil.y  = lerp * this.gazeY + (1 - lerp) * this.leftPupil.y;
-        this.rightPupil.x = lerp * this.gazeX + (1 - lerp) * this.rightPupil.x;
-        this.rightPupil.y = lerp * this.gazeY + (1 - lerp) * this.rightPupil.y;
+        // Wandering gaze when nothing is grabbing attention.
+        if (this.idleGazeTimer <= 0) {
+            this.idleGazeTarget.x = (Math.random() - 0.5) * 5;
+            this.idleGazeTarget.y = (Math.random() - 0.5) * 3;
+            this.idleGazeTimer = 1800 + Math.random() * 1800;
+        }
+        const gx = this.idleGazeTimer < 1500 ? this.idleGazeTarget.x : this.gazeX;
+        const gy = this.idleGazeTimer < 1500 ? this.idleGazeTarget.y : this.gazeY;
+        const lerp = 0.18;
+        this.leftPupil.x  = lerp * gx + (1 - lerp) * this.leftPupil.x;
+        this.leftPupil.y  = lerp * gy + (1 - lerp) * this.leftPupil.y;
+        this.rightPupil.x = lerp * gx + (1 - lerp) * this.rightPupil.x;
+        this.rightPupil.y = lerp * gy + (1 - lerp) * this.rightPupil.y;
 
         if (this.blinkTimer < 0) {
             this.blink();
-            this.blinkTimer = 2000 + Math.random() * 2000;
+            this.blinkTimer = 2300 + Math.random() * 2400;
+        }
+
+        if (this.earTwitchTimer < 0) {
+            const which = Math.random() < 0.5 ? this.leftEar : this.rightEar;
+            const dir = Math.random() < 0.5 ? -0.25 : 0.25;
+            which.rotation = dir;
+            setTimeout(() => { which.rotation = 0; }, 120);
+            this.earTwitchTimer = 5000 + Math.random() * 4000;
         }
 
         if (this.speechBubble.visible && performance.now() > this.speechVisibleUntil) {
             this.speechBubble.visible = false;
         }
 
+        // Mood tint
         let tint = 0xffffff;
         if (state.sick) tint = 0xb8d8b8;
         else if (state.happiness < 25) tint = 0xc8c8c8;
         this.body.tint = tint;
 
+        // Eyebrow shape responds to mood
+        this.drawBrows(state.sick ? "sick" : state.happiness < 25 ? "sad" : state.happiness > 70 ? "happy" : "neutral");
+
         if (this.wetness > 0.05) {
-            this.head.alpha = 1 - this.wetness * 0.15;
+            this.head.alpha = 1 - this.wetness * 0.18;
             this.wetness = Math.max(0, this.wetness - deltaMs / 8000);
         } else {
             this.head.alpha = 1;
@@ -211,6 +294,7 @@ export class Creature {
 
         this.applyAction(t, deltaMs);
 
+        // Shadow follows body height (smaller and fainter when jumping).
         const bodyOffset = this.body.y;
         const shadowScale = 1 - Math.min(0.4, Math.max(0, -bodyOffset) / 30);
         this.shadow.scale.x = shadowScale;
@@ -219,41 +303,95 @@ export class Creature {
         this.container.scale.set(this.phenotype.size_modifier);
     }
 
+    /* ---------------- drawing ---------------- */
+
     private draw(): void {
         const p = this.phenotype;
         const bodyHex = parseInt(p.body_color_hex.slice(1), 16);
         const accentHex = parseInt(p.accent_color_hex.slice(1), 16);
         const eyeHex = parseInt(p.eye_color_hex.slice(1), 16);
+        const innerEarHex = darken(bodyHex, 0.7);
 
+        // Shadow
         this.shadow.clear();
-        this.shadow.ellipse(0, H * 1.05, W * 0.65, 8).fill({ color: 0x000000, alpha: 0.25 });
+        this.shadow.ellipse(0, H + THIGH_LEN + SHIN_LEN + 6, W * 0.85, 7).fill({ color: 0x000000, alpha: 0.28 });
 
+        // Tail
         this.drawTail(bodyHex);
-        this.drawLeg(this.leftLeg, -W * 0.3, H * 0.6, bodyHex);
-        this.drawLeg(this.rightLeg,  W * 0.3, H * 0.6, bodyHex);
-        this.drawTorso(bodyHex, accentHex);
-        this.drawArm(this.leftArm,  -W * 0.55, -H * 0.05, bodyHex);
-        this.drawArm(this.rightArm,  W * 0.55, -H * 0.05, bodyHex);
-        this.drawHead(bodyHex, eyeHex, accentHex);
+
+        // Legs (two-segment) - draw upper and lower segments.
+        this.drawLegSegments(this.leftThigh, this.leftShin, this.leftFoot, bodyHex);
+        this.drawLegSegments(this.rightThigh, this.rightShin, this.rightFoot, bodyHex);
+
+        // Torso (rounded chibi shape — wider near top of body)
+        this.torsoG.clear();
+        this.torsoG.moveTo(-W * 0.78, -H * 0.45);
+        this.torsoG.bezierCurveTo(-W * 1.05, -H * 0.4, -W * 1.0, H * 0.5, -W * 0.62, H * 0.6);
+        this.torsoG.lineTo(W * 0.62, H * 0.6);
+        this.torsoG.bezierCurveTo(W * 1.0, H * 0.5, W * 1.05, -H * 0.4, W * 0.78, -H * 0.45);
+        this.torsoG.closePath();
+        this.torsoG.fill(bodyHex);
+        this.torsoG.stroke({ color: 0x000000, width: 2.5, alpha: 0.18 });
+
+        // Belly (lighter cream patch)
+        this.bellyG.clear();
+        this.bellyG.ellipse(0, H * 0.15, W * 0.45, H * 0.4).fill({ color: 0xffffff, alpha: 0.5 });
+
+        if (this.pattern) this.body.removeChild(this.pattern);
+        this.pattern = this.makePattern(accentHex);
+        if (this.pattern) {
+            this.pattern.zIndex = 1;
+            this.body.addChildAt(this.pattern, 2);
+        }
+
+        // Arm segments
+        this.drawArmSegments(this.leftShoulder, this.leftForearm, this.leftPaw, bodyHex);
+        this.drawArmSegments(this.rightShoulder, this.rightForearm, this.rightPaw, bodyHex);
+
+        // Head
+        this.drawHead(bodyHex, eyeHex, accentHex, innerEarHex);
     }
 
-    private drawTorso(bodyHex: number, accentHex: number): void {
-        const torso = new Graphics();
-        torso.moveTo(-W * 0.7, -H * 0.45);
-        torso.bezierCurveTo(-W * 0.95, -H * 0.45, -W * 0.95, H * 0.55, -W * 0.55, H * 0.6);
-        torso.lineTo(W * 0.55, H * 0.6);
-        torso.bezierCurveTo(W * 0.95, H * 0.55, W * 0.95, -H * 0.45, W * 0.7, -H * 0.45);
-        torso.closePath();
-        torso.fill(bodyHex);
-        torso.stroke({ color: 0x000000, width: 2, alpha: 0.18 });
-        this.body.addChild(torso);
+    private drawLegSegments(thigh: Container, shin: Container, foot: Container, bodyHex: number): void {
+        // Clear previous segments if redrawing
+        thigh.removeChildren().filter((_, i) => i === 0); // keep shin (children[0])
+        const thighG = new Graphics();
+        thighG.roundRect(-7, 0, 14, THIGH_LEN + 2, 6).fill(bodyHex);
+        thighG.stroke({ color: 0x000000, width: 1.4, alpha: 0.18 });
+        thigh.addChildAt(thighG, 0);
 
-        const belly = new Graphics();
-        belly.ellipse(0, H * 0.1, W * 0.42, H * 0.35).fill({ color: 0xffffff, alpha: 0.42 });
-        this.body.addChild(belly);
+        const shinG = new Graphics();
+        shinG.roundRect(-6, 0, 12, SHIN_LEN + 2, 5).fill(bodyHex);
+        shinG.stroke({ color: 0x000000, width: 1.3, alpha: 0.18 });
+        shin.addChildAt(shinG, 0);
 
-        const pattern = this.makePattern(accentHex);
-        if (pattern) this.body.addChild(pattern);
+        const footG = new Graphics();
+        footG.ellipse(0, 4, 11, 5).fill(0x6e3a52);
+        // Toe pads
+        footG.circle(-4, 1, 1.6).fill({ color: 0xffffff, alpha: 0.3 });
+        footG.circle(4, 1, 1.6).fill({ color: 0xffffff, alpha: 0.3 });
+        foot.addChildAt(footG, 0);
+    }
+
+    private drawArmSegments(shoulder: Container, forearm: Container, paw: Container, bodyHex: number): void {
+        const upperG = new Graphics();
+        upperG.roundRect(-5, 0, 10, UPPER_ARM_LEN + 2, 4).fill(bodyHex);
+        upperG.stroke({ color: 0x000000, width: 1.3, alpha: 0.18 });
+        shoulder.addChildAt(upperG, 0);
+
+        const fG = new Graphics();
+        fG.roundRect(-5, 0, 10, FOREARM_LEN + 2, 4).fill(bodyHex);
+        fG.stroke({ color: 0x000000, width: 1.3, alpha: 0.18 });
+        forearm.addChildAt(fG, 0);
+
+        const pawG = new Graphics();
+        pawG.circle(0, 4, 6).fill(bodyHex);
+        pawG.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
+        // Toe pads
+        pawG.circle(-2.3, 3, 1.2).fill({ color: 0x000000, alpha: 0.4 });
+        pawG.circle(0,    3, 1.2).fill({ color: 0x000000, alpha: 0.4 });
+        pawG.circle(2.3,  3, 1.2).fill({ color: 0x000000, alpha: 0.4 });
+        paw.addChildAt(pawG, 0);
     }
 
     private makePattern(accent: number): Graphics | null {
@@ -262,7 +400,6 @@ export class Creature {
         const g = new Graphics();
         const fp = p.fingerprint;
         const density = p.pattern_density;
-
         if (p.pattern === "spots") {
             const count = Math.floor(8 + density * 10);
             for (let i = 0; i < count; i++) {
@@ -299,37 +436,8 @@ export class Creature {
         return g;
     }
 
-    private drawLeg(leg: Container, x: number, y: number, bodyHex: number): void {
-        leg.x = x;
-        leg.y = y;
-        leg.pivot.set(0, -8);
-        const upper = new Graphics();
-        upper.roundRect(-7, 0, 14, 18, 6).fill(bodyHex);
-        upper.stroke({ color: 0x000000, width: 1.5, alpha: 0.18 });
-        leg.addChild(upper);
-        const foot = new Graphics();
-        foot.ellipse(0, 22, 11, 5).fill(0x6e3a52);
-        leg.addChild(foot);
-    }
-
-    private drawArm(arm: Container, x: number, y: number, bodyHex: number): void {
-        arm.x = x;
-        arm.y = y;
-        arm.pivot.set(0, -10);
-        const upper = new Graphics();
-        upper.roundRect(-6, 0, 12, 22, 5).fill(bodyHex);
-        upper.stroke({ color: 0x000000, width: 1.3, alpha: 0.18 });
-        arm.addChild(upper);
-        const paw = new Graphics();
-        paw.circle(0, 24, 6).fill(bodyHex);
-        paw.circle(-2, 22, 1.4).fill({ color: 0x000000, alpha: 0.4 });
-        paw.circle(0, 22, 1.4).fill({ color: 0x000000, alpha: 0.4 });
-        paw.circle(2, 22, 1.4).fill({ color: 0x000000, alpha: 0.4 });
-        arm.addChild(paw);
-    }
-
     private drawTail(bodyHex: number): void {
-        this.tail.x = -W * 0.75;
+        this.tail.x = -W * 0.7;
         this.tail.y = H * 0.05;
         const g = new Graphics();
         switch (this.phenotype.tail_style) {
@@ -357,59 +465,98 @@ export class Creature {
         this.tail.addChild(g);
     }
 
-    private drawHead(bodyHex: number, eyeHex: number, accentHex: number): void {
-        this.head.x = 0;
-        this.head.y = -H * 0.85;
-
+    private drawHead(bodyHex: number, eyeHex: number, accentHex: number, innerEarHex: number): void {
+        // Background head fill
         const headG = new Graphics();
-        headG.ellipse(0, 0, HEAD_R, HEAD_R * 0.92).fill(bodyHex);
-        headG.stroke({ color: 0x000000, width: 2, alpha: 0.18 });
+        headG.ellipse(0, 0, HEAD_R, HEAD_R * 0.94).fill(bodyHex);
+        headG.stroke({ color: 0x000000, width: 2.5, alpha: 0.2 });
         this.head.addChildAt(headG, 0);
 
+        // Optional pattern on head (spots / freckles)
         const headPattern = this.makeHeadPattern(accentHex);
         if (headPattern) this.head.addChildAt(headPattern, 1);
 
+        // Antenna with glowing tip
         const antenna = new Graphics();
         antenna.moveTo(2, -HEAD_R * 0.95)
-            .quadraticCurveTo(0, -HEAD_R * 1.2, 4, -HEAD_R * 1.4)
-            .stroke({ color: 0x6e3a52, width: 2.5, cap: "round" });
-        antenna.circle(4, -HEAD_R * 1.42, 4.5).fill(0xffd84a);
-        antenna.circle(2.8, -HEAD_R * 1.45, 1.4).fill(0xffffff);
+            .quadraticCurveTo(0, -HEAD_R * 1.2, 4, -HEAD_R * 1.42)
+            .stroke({ color: 0x6e3a52, width: 2.8, cap: "round" });
+        antenna.circle(4, -HEAD_R * 1.44, 5).fill(0xffd84a);
+        antenna.circle(2.5, -HEAD_R * 1.47, 1.5).fill(0xffffff);
         this.head.addChildAt(antenna, 2);
 
-        this.drawEar(this.leftEar,  -HEAD_R * 0.75, -HEAD_R * 0.65, -1, bodyHex);
-        this.drawEar(this.rightEar,  HEAD_R * 0.75, -HEAD_R * 0.65,  1, bodyHex);
+        // Ears with inner colour for depth
+        this.drawEar(this.leftEar,  -HEAD_R * 0.78, -HEAD_R * 0.6, -1, bodyHex, innerEarHex);
+        this.drawEar(this.rightEar,  HEAD_R * 0.78, -HEAD_R * 0.6,  1, bodyHex, innerEarHex);
 
-        const eyeY = -HEAD_R * 0.05;
-        const eyeR = 7;
+        const eyeY = -HEAD_R * 0.06;
+        const eyeR = 8;
+
         this.leftEye.clear();
-        this.leftEye.ellipse(-HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.1).fill(0xffffff);
-        this.leftEye.ellipse(-HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.1).stroke({ color: eyeHex, width: 1.2, alpha: 0.7 });
+        this.leftEye.ellipse(-HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.15).fill(0xffffff);
+        this.leftEye.ellipse(-HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.15).stroke({ color: eyeHex, width: 1.4, alpha: 0.75 });
 
         this.rightEye.clear();
-        this.rightEye.ellipse(HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.1).fill(0xffffff);
-        this.rightEye.ellipse(HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.1).stroke({ color: eyeHex, width: 1.2, alpha: 0.7 });
+        this.rightEye.ellipse(HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.15).fill(0xffffff);
+        this.rightEye.ellipse(HEAD_R * 0.32, eyeY, eyeR, eyeR * 1.15).stroke({ color: eyeHex, width: 1.4, alpha: 0.75 });
 
         this.leftPupil.clear();
-        this.leftPupil.circle(-HEAD_R * 0.32, eyeY, 3.5).fill(0x1a1230);
-        this.leftPupil.circle(-HEAD_R * 0.32 + 1, eyeY - 1, 1.2).fill(0xffffff);
+        this.leftPupil.circle(-HEAD_R * 0.32, eyeY, 4).fill(0x1a1230);
+        this.leftPupil.circle(-HEAD_R * 0.32 + 1.3, eyeY - 1.3, 1.5).fill(0xffffff);
 
         this.rightPupil.clear();
-        this.rightPupil.circle(HEAD_R * 0.32, eyeY, 3.5).fill(0x1a1230);
-        this.rightPupil.circle(HEAD_R * 0.32 + 1, eyeY - 1, 1.2).fill(0xffffff);
+        this.rightPupil.circle(HEAD_R * 0.32, eyeY, 4).fill(0x1a1230);
+        this.rightPupil.circle(HEAD_R * 0.32 + 1.3, eyeY - 1.3, 1.5).fill(0xffffff);
 
         this.leftLid.clear();
         this.rightLid.clear();
 
-        this.cheekL.clear();
-        this.cheekL.circle(-HEAD_R * 0.6, eyeY + 9, 4).fill({ color: 0xff7eb3, alpha: 0.6 });
-        this.cheekR.clear();
-        this.cheekR.circle(HEAD_R * 0.6, eyeY + 9, 4).fill({ color: 0xff7eb3, alpha: 0.6 });
+        // Eyebrows (default neutral)
+        this.drawBrows("neutral");
 
+        // Cheeks
+        this.cheekL.clear();
+        this.cheekL.circle(-HEAD_R * 0.62, eyeY + 11, 4.5).fill({ color: 0xff7eb3, alpha: 0.62 });
+        this.cheekR.clear();
+        this.cheekR.circle(HEAD_R * 0.62, eyeY + 11, 4.5).fill({ color: 0xff7eb3, alpha: 0.62 });
+
+        // Tiny nose
+        this.nose.clear();
+        this.nose.ellipse(0, eyeY + 12, 2.5, 1.6).fill(0x4a2030);
+
+        // Default mouth (small smile)
         this.mouth.clear();
-        this.mouth.moveTo(-5, eyeY + 16)
-            .quadraticCurveTo(0, eyeY + 21, 5, eyeY + 16)
+        this.mouth.moveTo(-5, eyeY + 18)
+            .quadraticCurveTo(0, eyeY + 22, 5, eyeY + 18)
             .stroke({ color: 0x1a1230, width: 1.8, cap: "round" });
+    }
+
+    private drawBrows(mood: "neutral" | "happy" | "sad" | "sick"): void {
+        const eyeY = -HEAD_R * 0.06;
+        const browY = eyeY - 11;
+        this.leftBrow.clear();
+        this.rightBrow.clear();
+        const stroke = { color: 0x1a1230, width: 2, cap: "round" } as const;
+        if (mood === "happy") {
+            this.leftBrow.moveTo(-HEAD_R * 0.4, browY + 1)
+                .quadraticCurveTo(-HEAD_R * 0.32, browY - 3, -HEAD_R * 0.24, browY + 1)
+                .stroke(stroke);
+            this.rightBrow.moveTo(HEAD_R * 0.4, browY + 1)
+                .quadraticCurveTo(HEAD_R * 0.32, browY - 3, HEAD_R * 0.24, browY + 1)
+                .stroke(stroke);
+        } else if (mood === "sad" || mood === "sick") {
+            this.leftBrow.moveTo(-HEAD_R * 0.42, browY - 2)
+                .lineTo(-HEAD_R * 0.22, browY + 2)
+                .stroke(stroke);
+            this.rightBrow.moveTo(HEAD_R * 0.42, browY - 2)
+                .lineTo(HEAD_R * 0.22, browY + 2)
+                .stroke(stroke);
+        } else {
+            this.leftBrow.moveTo(-HEAD_R * 0.4, browY)
+                .lineTo(-HEAD_R * 0.24, browY).stroke(stroke);
+            this.rightBrow.moveTo(HEAD_R * 0.4, browY)
+                .lineTo(HEAD_R * 0.24, browY).stroke(stroke);
+        }
     }
 
     private makeHeadPattern(accent: number): Graphics | null {
@@ -419,190 +566,253 @@ export class Creature {
         if (this.phenotype.pattern === "spots") {
             for (let i = 0; i < 5; i++) {
                 const x = (fp[i * 3 + 5] - 0.5) * HEAD_R * 1.4;
-                const y = (fp[i * 3 + 6] - 0.5) * HEAD_R * 0.6;
-                g.circle(x, y, 2.5 + fp[i * 3 + 7] * 2)
-                    .fill({ color: accent, alpha: 0.7 });
+                const y = (fp[i * 3 + 6] - 0.5) * HEAD_R * 0.7;
+                g.circle(x, y, 2.5 + fp[i * 3 + 7] * 2).fill({ color: accent, alpha: 0.7 });
             }
         } else {
             for (let i = 0; i < 8; i++) {
                 const x = (fp[i + 20] - 0.5) * HEAD_R * 1.2;
                 const y = (fp[i + 30] - 0.5) * HEAD_R * 0.4;
-                g.circle(x, y, 0.9).fill({ color: 0x000000, alpha: 0.5 });
+                g.circle(x, y, 0.9).fill({ color: 0x000000, alpha: 0.55 });
             }
         }
         return g;
     }
 
-    private drawEar(ear: Container, x: number, y: number, mirror: number, bodyHex: number): void {
+    private drawEar(ear: Container, x: number, y: number, mirror: number, bodyHex: number, innerHex: number): void {
         ear.x = x;
         ear.y = y;
         ear.pivot.set(0, 4);
         const g = new Graphics();
         switch (this.phenotype.ear_shape) {
             case "round":
-                g.circle(0, 0, 9).fill(bodyHex);
-                g.circle(0, 0, 5).fill({ color: 0xff7eb3, alpha: 0.4 });
+                g.circle(0, 0, 10).fill(bodyHex);
+                g.circle(0, 1, 6).fill(innerHex);
                 break;
             case "pointy":
                 g.poly([-7, 6, 7 * mirror, 6, 2 * mirror, -16]).fill(bodyHex);
+                g.poly([-3, 4, 4 * mirror, 4, 1 * mirror, -10]).fill(innerHex);
                 break;
             case "floppy":
                 g.ellipse(0, 8, 7, 14).fill(bodyHex);
+                g.ellipse(0, 9, 4, 9).fill(innerHex);
                 break;
             case "tufted":
                 g.poly([-5, 4, 5, 4, 2 * mirror, -16, -1 * mirror, -8]).fill(bodyHex);
+                g.poly([-2, 3, 3, 3, 1 * mirror, -10]).fill(innerHex);
                 break;
             case "small":
                 g.circle(0, 4, 5).fill(bodyHex);
+                g.circle(0, 4.5, 3).fill(innerHex);
                 break;
         }
-        g.stroke({ color: 0x000000, width: 1.2, alpha: 0.18 });
+        g.stroke({ color: 0x000000, width: 1.4, alpha: 0.2 });
         ear.addChild(g);
     }
 
+    /* ---------------- animations ---------------- */
+
     private blink(): void {
-        const eyeY = -HEAD_R * 0.05;
+        const eyeY = -HEAD_R * 0.06;
         this.leftLid.clear();
-        this.leftLid.moveTo(-HEAD_R * 0.32 - 7, eyeY).lineTo(-HEAD_R * 0.32 + 7, eyeY)
-            .stroke({ color: 0x1a1230, width: 2.2, cap: "round" });
+        this.leftLid.moveTo(-HEAD_R * 0.32 - 8, eyeY).lineTo(-HEAD_R * 0.32 + 8, eyeY)
+            .stroke({ color: 0x1a1230, width: 2.4, cap: "round" });
         this.rightLid.clear();
-        this.rightLid.moveTo(HEAD_R * 0.32 - 7, eyeY).lineTo(HEAD_R * 0.32 + 7, eyeY)
-            .stroke({ color: 0x1a1230, width: 2.2, cap: "round" });
+        this.rightLid.moveTo(HEAD_R * 0.32 - 8, eyeY).lineTo(HEAD_R * 0.32 + 8, eyeY)
+            .stroke({ color: 0x1a1230, width: 2.4, cap: "round" });
         this.leftEye.alpha = 0;  this.rightEye.alpha = 0;
         this.leftPupil.alpha = 0; this.rightPupil.alpha = 0;
         setTimeout(() => {
             this.leftLid.clear(); this.rightLid.clear();
             this.leftEye.alpha = 1;  this.rightEye.alpha = 1;
             this.leftPupil.alpha = 1; this.rightPupil.alpha = 1;
-        }, 80);
+        }, 100);
     }
 
     private applyAction(tSec: number, deltaMs: number): void {
+        // Defaults
         let bodyY = 0, bodyRot = 0;
-        let headY = 0, headRot = 0;
-        let leftLegRot = 0, rightLegRot = 0;
-        let leftLegY = 0, rightLegY = 0;
-        let leftArmRot = -0.05, rightArmRot = 0.05;
-        let tailRot = Math.sin(tSec * 1.6) * 0.12;
-        let leftEarRot = 0, rightEarRot = 0;
+        let bodyScaleY = 1, bodyScaleX = 1;
+        let headRot = 0;
+        let leftThighRot = 0, rightThighRot = 0;
+        let leftShinRot = 0, rightShinRot = 0;
+        let leftShoulderRot = -0.15, rightShoulderRot = 0.15;
+        let leftElbow = 0.3, rightElbow = 0.3;
+        let tailRot = Math.sin(tSec * 1.6) * 0.15;
+        let leftEarBase = 0, rightEarBase = 0;
 
         // Idle breathing
-        bodyY = Math.sin(tSec * 1.2) * 1.2;
-        headY = bodyY * 0.8;
+        const breath = Math.sin(tSec * 1.4) * 1.2;
+        bodyY = breath;
 
         switch (this.currentAction) {
             case "walk": {
-                const phase = tSec * 4.2;
-                bodyY = Math.abs(Math.sin(phase)) * -3;
+                const phase = tSec * 4.5;
+                const bounce = Math.abs(Math.sin(phase)) * -3.5;
+                bodyY = bounce + Math.sin(tSec * 1.2) * 0.4;
                 bodyRot = Math.sin(phase) * 0.04;
-                headY = bodyY * -0.5;
-                headRot = -bodyRot * 0.6;
-                leftLegRot = Math.sin(phase) * 0.45;
-                rightLegRot = Math.sin(phase + Math.PI) * 0.45;
-                leftLegY = Math.max(0, -Math.sin(phase)) * -4;
-                rightLegY = Math.max(0, -Math.sin(phase + Math.PI)) * -4;
-                leftArmRot = Math.sin(phase + Math.PI) * 0.35 - 0.05;
-                rightArmRot = Math.sin(phase) * 0.35 + 0.05;
-                tailRot = Math.sin(phase) * 0.25;
+                headRot = -bodyRot * 0.7;            // head settles, counter to body
+                bodyScaleY = 1 + Math.sin(phase * 2) * 0.025;
+
+                // Hip swings: left forward when right back.
+                leftThighRot  = Math.sin(phase) * 0.5;
+                rightThighRot = Math.sin(phase + Math.PI) * 0.5;
+                // Knee bend: shin bends on the lifting (forward) phase.
+                leftShinRot  = Math.max(0, Math.sin(phase)) * 0.6;
+                rightShinRot = Math.max(0, Math.sin(phase + Math.PI)) * 0.6;
+
+                leftShoulderRot = Math.sin(phase + Math.PI) * 0.32 - 0.15;
+                rightShoulderRot = Math.sin(phase) * 0.32 + 0.15;
+                leftElbow = 0.3 + Math.max(0, Math.sin(phase)) * 0.25;
+                rightElbow = 0.3 + Math.max(0, Math.sin(phase + Math.PI)) * 0.25;
+
+                tailRot = Math.sin(phase) * 0.3;
                 break;
             }
-            case "eat":
-                bodyY = 4; bodyRot = 0.05;
-                headY = 6; headRot = 0.15;
+
+            case "eat": {
+                bodyY = 5; bodyRot = 0.06;
+                headRot = 0.18;
                 this.mouth.clear();
-                this.mouth.ellipse(0, 5, 4, 2 + Math.abs(Math.sin(tSec * 7) * 3)).fill(0x1a1230);
-                leftArmRot = -0.4; rightArmRot = 0.4;
+                const open = 2 + Math.abs(Math.sin(tSec * 7) * 4);
+                this.mouth.ellipse(0, -HEAD_R * 0.06 + 18, 5, open).fill(0x1a1230);
+                leftShoulderRot = -0.6; rightShoulderRot = 0.6;
+                leftElbow = 0.9; rightElbow = 0.9;
                 break;
+            }
+
             case "sleep": {
-                bodyY = 8; bodyRot = 0.08;
-                headY = 12; headRot = 0.25;
-                leftEarRot = 0.15; rightEarRot = -0.15;
+                bodyY = 12; bodyRot = 0.1;
+                headRot = 0.28;
+                bodyScaleY = 0.92;
+                leftEarBase = 0.18; rightEarBase = -0.18;
+                leftThighRot = -0.35; rightThighRot = -0.35;
+                leftShinRot = 0.4; rightShinRot = 0.4;
+                leftShoulderRot = -0.5; rightShoulderRot = 0.5;
+                leftElbow = 1.1; rightElbow = 1.1;
                 this.leftEye.alpha = 0; this.rightEye.alpha = 0;
                 this.leftPupil.alpha = 0; this.rightPupil.alpha = 0;
-                const eyeY = -HEAD_R * 0.05;
+                const eyeY = -HEAD_R * 0.06;
                 this.leftLid.clear();
-                this.leftLid.moveTo(-HEAD_R * 0.32 - 6, eyeY).lineTo(-HEAD_R * 0.32 + 6, eyeY)
-                    .stroke({ color: 0x1a1230, width: 2.2, cap: "round" });
+                this.leftLid.moveTo(-HEAD_R * 0.32 - 7, eyeY).lineTo(-HEAD_R * 0.32 + 7, eyeY)
+                    .stroke({ color: 0x1a1230, width: 2.4, cap: "round" });
                 this.rightLid.clear();
-                this.rightLid.moveTo(HEAD_R * 0.32 - 6, eyeY).lineTo(HEAD_R * 0.32 + 6, eyeY)
-                    .stroke({ color: 0x1a1230, width: 2.2, cap: "round" });
+                this.rightLid.moveTo(HEAD_R * 0.32 - 7, eyeY).lineTo(HEAD_R * 0.32 + 7, eyeY)
+                    .stroke({ color: 0x1a1230, width: 2.4, cap: "round" });
                 break;
             }
-            case "yawn":
+
+            case "yawn": {
                 this.mouth.clear();
-                this.mouth.ellipse(0, 6, 5, 6).fill(0x1a1230);
-                bodyY = -3; headY = -4;
+                this.mouth.ellipse(0, -HEAD_R * 0.06 + 18, 6, 7).fill(0x1a1230);
+                bodyY = -3; headRot = -0.05;
+                bodyScaleY = 1.04;
                 break;
-            case "sneeze":
+            }
+
+            case "sneeze": {
                 if ((tSec * 8) % 2 < 1) {
-                    bodyY = -4; headRot = -0.2;
-                    leftEarRot = -0.2; rightEarRot = 0.2;
+                    bodyY = -5; headRot = -0.25;
+                    leftEarBase = -0.25; rightEarBase = 0.25;
                 }
                 break;
-            case "scratch":
-                rightArmRot = -1.4 + Math.sin(tSec * 6) * 0.25;
+            }
+
+            case "scratch": {
+                rightShoulderRot = -1.4 + Math.sin(tSec * 6) * 0.25;
+                rightElbow = 1.0;
                 headRot = Math.sin(tSec * 6) * 0.1;
                 break;
-            case "look_at_camera":
+            }
+
+            case "look_at_camera": {
                 headRot = 0; bodyRot = 0;
                 break;
-            case "chase_tail":
+            }
+
+            case "chase_tail": {
                 this.container.rotation = Math.sin(tSec * 2.5) * 0.5;
                 tailRot = Math.sin(tSec * 4) * 0.5;
                 break;
-            case "fart":
-                bodyY = Math.sin(tSec * 12) * 1.2;
+            }
+
+            case "fart": {
+                bodyY = Math.sin(tSec * 12) * 1.3;
                 tailRot = Math.sin(tSec * 8) * 0.4;
                 break;
-            case "play_with_toy":
-                bodyY = Math.sin(tSec * 4) * -4;
-                leftArmRot = Math.sin(tSec * 4) * 0.6;
-                rightArmRot = Math.sin(tSec * 4 + Math.PI) * 0.6;
+            }
+
+            case "play_with_toy": {
+                // Anticipation crouch -> jump -> recovery
+                const t = tSec * 2;
+                const crouch = Math.max(0, Math.sin(t)) ;
+                bodyY = -crouch * 7;
+                bodyScaleY = 1 + crouch * -0.1;
+                bodyScaleX = 1 + crouch * 0.08;
+                leftShoulderRot = Math.sin(tSec * 4) * 0.6;
+                rightShoulderRot = Math.sin(tSec * 4 + Math.PI) * 0.6;
                 tailRot = Math.sin(tSec * 6) * 0.4;
                 break;
-            case "wash":
-                leftArmRot = -1.2 + Math.sin(tSec * 5) * 0.4;
-                rightArmRot = 1.2 + Math.sin(tSec * 5 + Math.PI) * 0.4;
+            }
+
+            case "wash": {
+                leftShoulderRot = -1.3 + Math.sin(tSec * 5) * 0.45;
+                rightShoulderRot = 1.3 + Math.sin(tSec * 5 + Math.PI) * 0.45;
+                leftElbow = 1.0; rightElbow = 1.0;
                 bodyY = Math.sin(tSec * 5) * -1.5;
-                headRot = Math.sin(tSec * 5) * 0.1;
+                headRot = Math.sin(tSec * 5) * 0.12;
                 break;
-            case "shake":
+            }
+
+            case "shake": {
                 this.container.rotation = Math.sin(tSec * 22) * 0.18;
                 tailRot = Math.sin(tSec * 22) * 0.6;
+                leftEarBase = Math.sin(tSec * 22) * 0.4;
+                rightEarBase = Math.sin(tSec * 22) * 0.4;
                 break;
-            case "sit":
-                bodyY = 6;
-                leftLegRot = -0.4;
-                rightLegRot = -0.4;
+            }
+
+            case "sit": {
+                bodyY = 8;
+                leftThighRot = -0.7; rightThighRot = -0.7;
+                leftShinRot = 1.2; rightShinRot = 1.2;
                 break;
+            }
+
             case "idle":
             default:
                 break;
         }
 
+        // Apply transforms
         this.body.y = bodyY;
         this.body.rotation = bodyRot;
-        this.head.y = -H * 0.85 + headY;
+        this.body.scale.set(this.facing * bodyScaleX, bodyScaleY);
         this.head.rotation = headRot;
-        this.leftLeg.rotation = leftLegRot;
-        this.rightLeg.rotation = rightLegRot;
-        this.leftLeg.y = H * 0.6 + leftLegY;
-        this.rightLeg.y = H * 0.6 + rightLegY;
-        this.leftArm.rotation = leftArmRot;
-        this.rightArm.rotation = rightArmRot;
+
+        this.leftThigh.rotation = leftThighRot;
+        this.rightThigh.rotation = rightThighRot;
+        this.leftShin.rotation = leftShinRot;
+        this.rightShin.rotation = rightShinRot;
+
+        this.leftShoulder.rotation = leftShoulderRot;
+        this.rightShoulder.rotation = rightShoulderRot;
+        this.leftForearm.rotation = leftElbow;
+        this.rightForearm.rotation = rightElbow;
+
         this.tail.rotation = tailRot;
-        this.leftEar.rotation = leftEarRot;
-        this.rightEar.rotation = rightEarRot;
+        this.leftEar.rotation = leftEarBase;
+        this.rightEar.rotation = rightEarBase;
 
         if (this.actionTimer > 0) {
             this.actionTimer -= deltaMs;
             if (this.actionTimer <= 0) {
                 this.currentAction = "idle";
                 this.container.rotation = 0;
-                const eyeY = -HEAD_R * 0.05;
+                const eyeY = -HEAD_R * 0.06;
                 this.mouth.clear();
-                this.mouth.moveTo(-5, eyeY + 16)
-                    .quadraticCurveTo(0, eyeY + 21, 5, eyeY + 16)
+                this.mouth.moveTo(-5, eyeY + 18)
+                    .quadraticCurveTo(0, eyeY + 22, 5, eyeY + 18)
                     .stroke({ color: 0x1a1230, width: 1.8, cap: "round" });
                 this.leftEye.alpha = 1;  this.rightEye.alpha = 1;
                 this.leftPupil.alpha = 1; this.rightPupil.alpha = 1;
@@ -610,4 +820,13 @@ export class Creature {
             }
         }
     }
+}
+
+/* ---------------- helpers ---------------- */
+
+function darken(hex: number, factor: number): number {
+    const r = Math.floor(((hex >> 16) & 0xff) * factor);
+    const g = Math.floor(((hex >> 8) & 0xff) * factor);
+    const b = Math.floor((hex & 0xff) * factor);
+    return (r << 16) | (g << 8) | b;
 }

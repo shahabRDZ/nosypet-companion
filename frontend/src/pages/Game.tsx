@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { sound } from "../audio/Sounds";
-import { ChatBox } from "../components/ChatBox";
+import { ActionDock, type Action } from "../components/ActionDock";
 import { ComaOverlay } from "../components/ComaOverlay";
+import { GameHUD } from "../components/GameHUD";
 import { Onboarding } from "../components/Onboarding";
 import { TraitPanel } from "../components/TraitPanel";
 import { Game } from "../game/Game";
@@ -14,10 +15,10 @@ export function GamePage() {
     const hostRef = useRef<HTMLDivElement | null>(null);
     const gameRef = useRef<Game | null>(null);
     const [archetypeRevealed, setArchetypeRevealed] = useState(false);
+    const [chatValue, setChatValue] = useState("");
+    const [chatBusy, setChatBusy] = useState(false);
     const sickTimerRef = useRef<number | undefined>(undefined);
 
-    // Mount the canvas exactly once per companion. Re-creating the
-    // PixiJS app on every poll caused the room to reset every 7s.
     const companionId = live.state?.id ?? null;
     useEffect(() => {
         if (!hostRef.current || !companionId || !live.state) return;
@@ -33,8 +34,6 @@ export function GamePage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [companionId]);
 
-    // Keep canvas state in sync with server. Idempotent and safe to
-    // call before mount() finishes.
     useEffect(() => {
         if (!gameRef.current || !live.state) return;
         gameRef.current.applyServerState({
@@ -47,7 +46,6 @@ export function GamePage() {
         });
     }, [live.state]);
 
-    // While sick, sneeze on a timer.
     useEffect(() => {
         if (!live.state?.is_sick) {
             if (sickTimerRef.current !== undefined) {
@@ -64,13 +62,11 @@ export function GamePage() {
         };
     }, [live.state?.is_sick]);
 
-    // Detect archetype-just-locked moment for the reveal modal.
     useEffect(() => {
         if (!live.state?.archetype_locked) return;
         const lockedAt = live.state.archetype_locked_at;
         if (!lockedAt) return;
         const ageOfLock = Date.now() - new Date(lockedAt).getTime();
-        // Show within first 5 minutes of locking.
         if (ageOfLock < 5 * 60 * 1000) setArchetypeRevealed(true);
     }, [live.state?.archetype_locked, live.state?.archetype_locked_at]);
 
@@ -83,51 +79,80 @@ export function GamePage() {
     }
 
     const c = live.state;
+    const needsHeal = !c.is_alive || (c.hunger ?? 100) < 20 || (c.happiness ?? 100) < 20 || (c.energy ?? 100) < 20;
+
+    async function sendChat(e: FormEvent) {
+        e.preventDefault();
+        const message = chatValue.trim();
+        if (!message || chatBusy) return;
+        setChatBusy(true);
+        setChatValue("");
+        try {
+            const r = await live.chat(message);
+            gameRef.current?.say(r.reply, 4500);
+        } finally {
+            setChatBusy(false);
+        }
+    }
+
+    const actions: Action[] = [
+        { key: "feed",  icon: "🍔", label: "Feed",  accent: "#ff8a5b",
+          onClick: () => { sound.unlock(); sound.eat(); void gameRef.current?.feed(); void live.feed(); } },
+        { key: "play",  icon: "🎾", label: "Play",  accent: "#ffd166",
+          onClick: () => { sound.unlock(); sound.play(); void gameRef.current?.play(); void live.play(); } },
+        { key: "sleep", icon: "💤", label: "Sleep", accent: "#6dd3ff",
+          onClick: () => { sound.unlock(); sound.sleep(); void gameRef.current?.sleep(); void live.sleep(); } },
+        { key: "wash",  icon: "🛁", label: "Wash",  accent: "#a78bfa",
+          onClick: () => { sound.unlock(); sound.nuzzle(); void gameRef.current?.wash(); void live.wash(); } },
+        { key: "pet",   icon: "🤍", label: "Pet",   accent: "#ff7eb3",
+          onClick: () => { sound.unlock(); sound.pet(); gameRef.current?.pet(); void live.pet(); } },
+        { key: "heal",  icon: "✨", label: "Heal",  accent: "#c084fc",
+          hidden: !needsHeal && !c.is_in_coma,
+          onClick: () => { sound.unlock(); sound.heal(); void live.heal(); } },
+    ];
+
+    const moodLine = (() => {
+        if (!c.is_alive) return "Unconscious. Heal to revive.";
+        if (c.is_sick) return `${c.disease ?? "feeling under the weather"}`;
+        if ((c.hunger ?? 100) < 20) return "Starving";
+        if ((c.energy ?? 100) < 20) return "Exhausted";
+        if ((c.happiness ?? 100) < 20) return "Bored";
+        if ((c.overall ?? 0) > 80) return "Living the good life ✨";
+        return null;
+    })();
 
     return (
         <main className="shell">
-            <header className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: "1rem" }}>
-                <div>
-                    <h1>{c.name}</h1>
-                    <p className="muted">
-                        {c.unique_code} · {c.phenotype.temperament_seed} · age {c.age_days}d
-                        {c.is_sick && <span style={{ color: "#7fcfa0" }}> · {c.disease}</span>}
-                    </p>
-                </div>
-                <Link to="/app/certificate" className="btn btn-ghost">Certificate</Link>
+            <header className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <p className="muted" style={{ fontSize: "0.85rem" }}>
+                    {c.unique_code} · {c.phenotype.temperament_seed} · age {c.age_days}d
+                </p>
+                <Link to="/app/certificate" className="btn btn-ghost" style={{ padding: "0.4rem 0.9rem" }}>
+                    Passport
+                </Link>
             </header>
 
-            <div className="game-viewport" ref={hostRef} />
+            <div className="game-stage">
+                <div className="game-viewport" ref={hostRef} />
+                <GameHUD companion={c} />
+                {moodLine && <div className="mood-line">{moodLine}</div>}
 
-            <div style={{ marginTop: "1rem" }}>
-                <StatRow label="Hunger" value={c.hunger ?? 0} hue="#ff8a5b" />
-                <StatRow label="Happy"  value={c.happiness ?? 0} hue="#ffd166" />
-                <StatRow label="Energy" value={c.energy ?? 0} hue="#6dd3ff" />
-                <StatRow label="Hygiene" value={c.hygiene ?? 0} hue="#a78bfa" />
-            </div>
+                <form className="chat-chip" onSubmit={sendChat}>
+                    <input
+                        type="text"
+                        value={chatValue}
+                        onChange={(e) => setChatValue(e.target.value)}
+                        placeholder="Say something to your companion..."
+                        maxLength={300}
+                        disabled={c.is_in_coma || chatBusy}
+                        aria-label="Talk to your companion"
+                    />
+                    <button type="submit" disabled={c.is_in_coma || chatBusy || !chatValue.trim()} aria-label="Send">
+                        ➤
+                    </button>
+                </form>
 
-            <div className="game-controls">
-                <ActionButton emoji="🍔" label="Feed"  onClick={() => { sound.unlock(); sound.eat(); live.feed(); }} />
-                <ActionButton emoji="🎾" label="Play"  onClick={() => { sound.unlock(); sound.play(); live.play(); }} />
-                <ActionButton emoji="💤" label="Sleep" onClick={() => { sound.unlock(); sound.sleep(); live.sleep(); }} />
-                <ActionButton emoji="🤍" label="Pet"   onClick={() => { sound.unlock(); sound.pet(); live.pet(); }} />
-                <ActionButton emoji="🛁" label="Wash"  onClick={async () => {
-                    sound.unlock();
-                    sound.nuzzle();
-                    // Run the in-canvas bath sequence in parallel with
-                    // the server side update — they take similar time.
-                    void gameRef.current?.wash();
-                    await live.wash();
-                }} />
-                <ActionButton emoji="✨" label="Heal"  onClick={() => { sound.unlock(); sound.heal(); live.heal(); }} disabled={!c.is_sick && !c.is_in_coma} />
-            </div>
-
-            <div style={{ marginTop: "1.4rem" }}>
-                <ChatBox
-                    onSend={live.chat}
-                    onReply={(text) => gameRef.current?.say(text, 4500)}
-                    disabled={c.is_in_coma}
-                />
+                <ActionDock actions={actions} />
             </div>
 
             <div style={{ marginTop: "1.4rem" }}>
@@ -140,11 +165,7 @@ export function GamePage() {
             </div>
 
             {c.is_in_coma && (
-                <ComaOverlay
-                    onComplete={async () => {
-                        await live.revive();
-                    }}
-                />
+                <ComaOverlay onComplete={async () => { await live.revive(); }} />
             )}
 
             {archetypeRevealed && c.archetype_locked && (
@@ -157,26 +178,6 @@ export function GamePage() {
 
             {!c.is_in_coma && !archetypeRevealed && <Onboarding />}
         </main>
-    );
-}
-
-function StatRow({ label, value, hue }: { label: string; value: number; hue: string }) {
-    return (
-        <div className="stat-row">
-            <span>{label}</span>
-            <div className="bar"><span style={{ width: `${value}%`, background: hue }} /></div>
-            <strong>{value}</strong>
-        </div>
-    );
-}
-
-function ActionButton({ emoji, label, onClick, disabled }: {
-    emoji: string; label: string; onClick: () => void; disabled?: boolean;
-}) {
-    return (
-        <button className="action-tile" onClick={onClick} disabled={disabled} aria-label={label}>
-            <span className="emoji">{emoji}</span><span className="label">{label}</span>
-        </button>
     );
 }
 
