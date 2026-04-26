@@ -12,6 +12,28 @@ import type { Companion } from "../types/companion";
 
 const POLL_MS = 7000;
 
+/**
+ * Notify any toast listener about meaningful trait/level/stage changes
+ * after an action. We use a window event rather than a context so the
+ * UI layer can attach a single listener at any depth.
+ */
+function emitDelta(prev: Companion | null, next: Companion): void {
+    if (!prev) return;
+    const parts: string[] = [];
+    if (next.traits && prev.traits) {
+        for (const k of Object.keys(next.traits)) {
+            const d = (next.traits[k] ?? 0) - (prev.traits[k] ?? 0);
+            if (d !== 0) parts.push(`${d > 0 ? "+" : ""}${d} ${k}`);
+        }
+    }
+    if (next.archetype_locked && !prev.archetype_locked) {
+        parts.push(`locked: ${next.archetype_locked}`);
+    }
+    if (parts.length) {
+        window.dispatchEvent(new CustomEvent("nosypet:toast", { detail: parts.join(" · ") }));
+    }
+}
+
 type Status = "loading" | "ready" | "error";
 
 export interface LiveCompanion {
@@ -65,8 +87,10 @@ export function useLiveCompanion(): LiveCompanion {
     const wrap = <Args extends unknown[]>(fn: (...a: Args) => Promise<Companion>) => {
         return async (...args: Args) => {
             try {
+                const before = state;
                 const c = await fn(...args);
                 setState(c);
+                emitDelta(before, c);
             } catch (e) {
                 if (e instanceof ApiError) setError(e.message);
             }

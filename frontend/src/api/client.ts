@@ -102,8 +102,23 @@ export const api = {
     // Chat & memories
     chat: (message: string) =>
         request<ChatReply>("/companion/chat/", { method: "POST", body: JSON.stringify({ message }) }),
-    memories: () => request<{ memories: MemoryEntry[] }>("/companion/memories/"),
+    memories: (page = 1, pageSize = 20) =>
+        request<{ memories: MemoryEntry[]; total: number; has_more: boolean }>(
+            `/companion/memories/?page=${page}&page_size=${pageSize}`,
+        ),
 
     verify: (uniqueCode: string) =>
         request<{ verified: boolean }>(`/verify/${encodeURIComponent(uniqueCode)}/`),
+
+    // Account
+    logoutAll: () =>
+        request<{ logged_out_all: boolean }>("/auth/logout-all/", { method: "POST" }),
+    exportData: () => request<unknown>("/account/export/"),
+    deleteAccount: (confirmUsername: string) =>
+        request<{ deleted: boolean }>("/account/delete/", {
+            method: "POST",
+            body: JSON.stringify({ confirm_username: confirmUsername }),
+        }),
+    founderStatus: () =>
+        request<{ founder_limit: number; founders_minted: number; founders_remaining: number }>("/founders/"),
 };

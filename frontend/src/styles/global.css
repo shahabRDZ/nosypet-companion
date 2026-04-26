@@ -373,6 +373,136 @@ input, textarea {
     padding: 0;
 }
 
+/* Memories page */
+.memory-group {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 1rem;
+}
+.memory-group h3 {
+    font-size: 0.95rem;
+    color: var(--gold);
+    margin-bottom: 0.6rem;
+    letter-spacing: 0.5px;
+}
+.memory-list {
+    list-style: none;
+    display: grid;
+    gap: 0.4rem;
+}
+.memory-list li {
+    display: grid;
+    grid-template-columns: 140px 1fr 50px;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.5rem 0.7rem;
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+.memory-list li strong { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.memory-list li em { color: var(--muted); font-size: 0.75rem; text-align: right; font-style: normal; }
+
+/* Account page danger card */
+.danger-card { border-color: rgba(239, 68, 68, 0.3); }
+.btn.danger {
+    background: linear-gradient(135deg, #ef4444, #c5302a);
+    color: #fff;
+}
+.btn.danger:hover { background: linear-gradient(135deg, #dc2c2c, #a52623); }
+
+/* Toast stack */
+.toast-stack {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    pointer-events: none;
+    z-index: 200;
+}
+.toast-line {
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    animation: toastIn 0.25s ease-out, toastOut 0.4s ease-in 2s forwards;
+}
+@keyframes toastIn  { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { to   { opacity: 0; transform: translateY(-10px); } }
+
+/* Founder counter pill on welcome */
+.founder-counter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 216, 74, 0.12);
+    border: 1px solid rgba(255, 216, 74, 0.35);
+    color: #ffe9a8;
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    margin-top: 0.6rem;
+}
+.founder-counter .dot {
+    width: 8px;
+    height: 8px;
+    background: #6dd3ff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #6dd3ff;
+    animation: pulseDot 1.4s ease-in-out infinite;
+}
+@keyframes pulseDot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(0.7); opacity: 0.5; }
+}
+
+/* Welcome testimonials */
+.welcome-testimonials {
+    position: relative;
+    z-index: 2;
+    max-width: 880px;
+    margin: 3rem auto 0;
+    text-align: center;
+    padding: 0 1rem;
+}
+.welcome-testimonials h3 {
+    font-size: 0.85rem;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-bottom: 1.2rem;
+}
+.welcome-testimonials ul {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+}
+.welcome-testimonials li {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 1.2rem 1.1rem;
+    text-align: left;
+}
+.welcome-testimonials blockquote {
+    font-size: 0.95rem;
+    line-height: 1.4;
+    margin-bottom: 0.6rem;
+}
+.welcome-testimonials cite {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-style: normal;
+}
+
 @media (max-width: 600px) {
     .topbar { padding: 0.8rem 1rem; }
     .game-controls { grid-template-columns: repeat(3, 1fr); }

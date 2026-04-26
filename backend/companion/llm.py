@@ -28,6 +28,7 @@ from typing import Iterable
 
 from django.conf import settings
 
+from . import safety
 from .models import Companion, CompanionMemory
 
 logger = logging.getLogger("companion")
@@ -71,7 +72,7 @@ def _mood_for(companion: Companion) -> str:
 def _system_prompt(companion: Companion, memories: Iterable[CompanionMemory]) -> str:
     pheno = companion.phenotype
     archetype = companion.archetype_locked or "still developing"
-    mem_lines = [f"- {m.fact_type}/{m.key}: {m.value}" for m in memories]
+    mem_lines = [f"- {m.fact_type}/{m.key}: {m.plain_value}" for m in memories]
     memory_block = "\n".join(mem_lines) if mem_lines else "(nothing yet)"
 
     return f"""You are {companion.name}, a small AI companion.
@@ -100,10 +101,21 @@ VOICE RULES:
 
 
 def speak(companion: Companion, owner_message: str) -> str:
-    """Generate the companion's next short reply."""
+    """Generate the companion's next short reply.
+
+    Crisis cues short-circuit to a fixed support response *before*
+    anything reaches the LLM. Prompt-injection markers in the user
+    message are redacted before being sent.
+    """
     owner_message = (owner_message or "").strip()[:500]
     if not owner_message:
         return random.choice(FALLBACK_LINES["neutral"])
+
+    crisis = safety.crisis_check(owner_message)
+    if crisis:
+        return crisis
+
+    safe_message = safety.sanitize_for_llm(owner_message)
 
     client = _client()
     if client is None:
@@ -117,9 +129,8 @@ def speak(companion: Companion, owner_message: str) -> str:
             model=MODEL,
             max_tokens=MAX_REPLY_TOKENS,
             system=[{"type": "text", "text": sys, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": owner_message}],
+            messages=[{"role": "user", "content": safe_message}],
         )
-        # Claude returns a list of content blocks.
         text = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
         return text or random.choice(FALLBACK_LINES[_mood_for(companion)])
     except Exception as e:
@@ -187,7 +198,10 @@ def extract_memories(companion: Companion, owner_message: str) -> list[dict]:
 
 
 def upsert_memories(companion: Companion, items: list[dict]) -> int:
-    """Persist a list of facts. Higher confidence overwrites lower."""
+    """Persist a list of facts, encrypted at rest. Higher confidence
+    overwrites lower."""
+    from . import crypto
+
     written = 0
     for it in items:
         existing = CompanionMemory.objects.filter(
@@ -201,7 +215,10 @@ def upsert_memories(companion: Companion, items: list[dict]) -> int:
             companion=companion,
             fact_type=it["fact_type"],
             key=it["key"],
-            defaults={"value": it["value"], "confidence": it["confidence"]},
+            defaults={
+                "value": crypto.encrypt(it["value"]),
+                "confidence": it["confidence"],
+            },
         )
         written += 1
     return written

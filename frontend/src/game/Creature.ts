@@ -111,6 +111,19 @@ export class Creature {
         this.actionTimer = durationMs;
     }
 
+    /** Subtle eye tracking. Pupils shift toward the cursor. */
+    public lookAt(localX: number, localY: number): void {
+        const dx = Math.max(-2.5, Math.min(2.5, localX / 40));
+        const dy = Math.max(-2.5, Math.min(2.5, localY / 40));
+        // Shift the inner pupil dots stored as the second child of each
+        // eye graphic. Drawing was: black ellipse, white sparkle, eye
+        // color rim. We move the whole eye group instead — simpler.
+        this.leftEye.x = dx;
+        this.leftEye.y = dy;
+        this.rightEye.x = dx;
+        this.rightEye.y = dy;
+    }
+
     public say(text: string, durationMs = 3000): void {
         this.speechText.text = text;
         const padding = 8;
@@ -245,39 +258,40 @@ export class Creature {
         const fp = p.fingerprint;
 
         if (p.pattern === "spots") {
-            const count = Math.floor(6 + density * 8);
+            const count = Math.floor(8 + density * 12);
             for (let i = 0; i < count; i++) {
                 const angle = fp[i] * Math.PI * 2;
-                const radius = (0.15 + fp[i + count] * 0.35) * w * 0.5;
+                const radius = (0.18 + fp[i + count] * 0.4) * w * 0.5;
                 const x = Math.cos(angle) * radius;
                 const y = Math.sin(angle) * radius * (h / w);
-                const r = 2 + fp[i + 16] * 4;
-                this.patternLayer.circle(x, y, r).fill({ color: accent, alpha: 0.55 });
+                const r = 3 + fp[i + 16] * 5;
+                this.patternLayer.circle(x, y, r).fill({ color: accent, alpha: 0.85 });
+                // Inner highlight for depth.
+                this.patternLayer.circle(x - 1, y - 1, r * 0.45).fill({ color: 0xffffff, alpha: 0.25 });
             }
         } else if (p.pattern === "stripes") {
-            const count = Math.floor(3 + density * 4);
+            const count = Math.floor(4 + density * 5);
             for (let i = 0; i < count; i++) {
-                const offset = -h * 0.4 + (h * 0.8 * (i + 1)) / (count + 1);
-                this.patternLayer.moveTo(-w * 0.45, offset)
-                    .quadraticCurveTo(0, offset + 4, w * 0.45, offset)
-                    .stroke({ color: accent, width: 2.5, alpha: 0.5 });
+                const offset = -h * 0.42 + (h * 0.84 * (i + 1)) / (count + 1);
+                this.patternLayer.moveTo(-w * 0.47, offset)
+                    .quadraticCurveTo(0, offset + 6, w * 0.47, offset)
+                    .stroke({ color: accent, width: 4, alpha: 0.85 });
             }
         } else if (p.pattern === "patches") {
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 5; i++) {
                 const x = (fp[i * 4] - 0.5) * w * 0.7;
                 const y = (fp[i * 4 + 1] - 0.5) * h * 0.7;
-                const rx = 6 + fp[i * 4 + 2] * 12;
-                const ry = 5 + fp[i * 4 + 3] * 10;
-                this.patternLayer.ellipse(x, y, rx, ry).fill({ color: accent, alpha: 0.5 });
+                const rx = 8 + fp[i * 4 + 2] * 14;
+                const ry = 7 + fp[i * 4 + 3] * 12;
+                this.patternLayer.ellipse(x, y, rx, ry).fill({ color: accent, alpha: 0.8 });
             }
         } else if (p.pattern === "freckles") {
-            for (let i = 0; i < 12; i++) {
-                const x = (fp[i + 30] - 0.5) * w * 0.5;
-                const y = -h * 0.05 + (fp[i + 42] - 0.5) * h * 0.2;
-                this.patternLayer.circle(x, y, 1.2).fill({ color: 0x000000, alpha: 0.3 });
+            for (let i = 0; i < 18; i++) {
+                const x = (fp[i + 30] - 0.5) * w * 0.6;
+                const y = -h * 0.05 + (fp[i + 42] - 0.5) * h * 0.25;
+                this.patternLayer.circle(x, y, 1.6).fill({ color: 0x000000, alpha: 0.55 });
             }
         }
-        // "solid" intentionally draws nothing.
     }
 
     private drawEars(shape: Phenotype["ear_shape"], w: number, h: number, bodyHex: number): void {
