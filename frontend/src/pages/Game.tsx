@@ -111,7 +111,14 @@ export function GamePage() {
                 <ActionButton emoji="🎾" label="Play"  onClick={() => { sound.unlock(); sound.play(); live.play(); }} />
                 <ActionButton emoji="💤" label="Sleep" onClick={() => { sound.unlock(); sound.sleep(); live.sleep(); }} />
                 <ActionButton emoji="🤍" label="Pet"   onClick={() => { sound.unlock(); sound.pet(); live.pet(); }} />
-                <ActionButton emoji="🛁" label="Wash"  onClick={() => { sound.unlock(); sound.nuzzle(); live.wash(); }} />
+                <ActionButton emoji="🛁" label="Wash"  onClick={async () => {
+                    sound.unlock();
+                    sound.nuzzle();
+                    // Run the in-canvas bath sequence in parallel with
+                    // the server side update — they take similar time.
+                    void gameRef.current?.wash();
+                    await live.wash();
+                }} />
                 <ActionButton emoji="✨" label="Heal"  onClick={() => { sound.unlock(); sound.heal(); live.heal(); }} disabled={!c.is_sick && !c.is_in_coma} />
             </div>
 

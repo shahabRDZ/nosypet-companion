@@ -19,7 +19,9 @@ export type ActionName =
     | "chase_tail"
     | "sleep"
     | "eat"
-    | "play_with_toy";
+    | "play_with_toy"
+    | "wash"
+    | "shake";
 
 export interface CreatureState {
     phenotype: Phenotype;

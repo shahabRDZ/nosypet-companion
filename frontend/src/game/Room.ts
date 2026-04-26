@@ -31,6 +31,8 @@ export class Room {
     private wainscot: Graphics;
     private clouds: Graphics[] = [];
     private cloudOffsets: number[] = [];
+    private lightShaft: Graphics;
+    private vignette: Graphics;
 
     constructor(public readonly layout: RoomLayout) {
         this.container = new Container();
@@ -50,12 +52,16 @@ export class Room {
         this.bowl = new Graphics();
         this.bed = new Graphics();
         this.toy = new Graphics();
+        this.lightShaft = new Graphics();
+        this.vignette = new Graphics();
 
         this.bgLayer.addChild(
             this.wall, this.window, this.sun, this.moon, this.wainscot,
-            this.floor, this.rug,
+            this.floor, this.rug, this.lightShaft,
         );
         this.fgLayer.addChild(this.bowl, this.bed, this.toy);
+        this.fxLayer.addChild(this.vignette);
+        this.vignette.zIndex = 50;
 
         for (let i = 0; i < 3; i++) {
             const c = new Graphics();
@@ -78,6 +84,10 @@ export class Room {
         this.wall.tint = isNight ? nightWall : dayWall;
         this.floor.tint = isNight ? nightFloor : dayFloor;
         this.wainscot.tint = isNight ? 0x2a1a4e : 0xe5cdb0;
+
+        // Light shaft from the window — warm amber by day, cool blue moonlight by night.
+        this.lightShaft.tint = isNight ? 0xb8c8e8 : 0xfff5d6;
+        this.lightShaft.alpha = isNight ? 0.18 : 0.32;
 
         // Drift the clouds across the window.
         this.cloudOffsets = this.cloudOffsets.map((o, i) => {
@@ -170,5 +180,29 @@ export class Room {
         this.toy.circle(toyPos.x, toyPos.y + 4, 6).fill({ color: 0x000000, alpha: 0.2 });
         this.toy.circle(toyPos.x, toyPos.y, 8).fill(0xff7eb3);
         this.toy.circle(toyPos.x - 2, toyPos.y - 2, 2).fill({ color: 0xffffff, alpha: 0.6 });
+
+        // Light shaft from the window onto the floor.
+        this.lightShaft.clear();
+        const lx = wx + ww * 0.5;
+        const ly = wy + wh;
+        this.lightShaft.poly([
+            lx - 30, ly,
+            lx + 30, ly,
+            lx + 90, height,
+            lx - 90, height,
+        ]).fill(0xfff5d6);
+
+        // Vignette: dark corners, slightly softens the canvas edges.
+        this.vignette.clear();
+        const r = Math.max(width, height);
+        this.vignette.circle(width / 2, height / 2, r * 0.85)
+            .fill({ color: 0x000000, alpha: 0 });
+        // Outer black falloff via a stroked path.
+        for (let i = 0; i < 12; i++) {
+            const a = i / 12;
+            this.vignette.rect(0, 0, width, height).stroke({
+                color: 0x000000, width: 4, alpha: a * 0.04,
+            });
+        }
     }
 }
