@@ -9,6 +9,8 @@ from . import dna
 
 
 class Companion(models.Model):
+    STAT_MAX = 100
+
     # Identity: immutable, set at birth.
     owner = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -24,8 +26,29 @@ class Companion(models.Model):
 
     name = models.CharField(max_length=30)
 
+    # Vital stats. Decayed continuously based on real elapsed time.
+    hunger = models.PositiveSmallIntegerField(default=80)
+    happiness = models.PositiveSmallIntegerField(default=80)
+    energy = models.PositiveSmallIntegerField(default=80)
+    hygiene = models.PositiveSmallIntegerField(default=85)
+    immunity = models.PositiveSmallIntegerField(default=70)
+
+    # Sickness: a current disease, if any. We use a CharField + start
+    # time rather than a separate table to keep queries simple. The
+    # disease catalogue lives in `sickness.py`.
+    disease = models.CharField(max_length=32, blank=True, default="")
+    disease_started_at = models.DateTimeField(null=True, blank=True)
+
+    # Lifecycle bookkeeping.
+    last_decay_at = models.DateTimeField(default=timezone.now)
+    last_interaction_at = models.DateTimeField(default=timezone.now)
     last_seen_at = models.DateTimeField(default=timezone.now)
     is_in_coma = models.BooleanField(default=False)
+    coma_started_at = models.DateTimeField(null=True, blank=True)
+
+    # Archetype lock (set at day 14).
+    archetype_locked = models.CharField(max_length=24, blank=True, default="")
+    archetype_locked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -75,16 +98,36 @@ class Companion(models.Model):
 
     @property
     def archetype(self):
-        if self.age_days < 14:
-            return None
+        """Locked archetype if old enough, else a preview of what it
+        *would* be if locked today. Frontend uses this to show a soft
+        hint of the developing personality before day 14."""
+        if self.archetype_locked:
+            return self.archetype_locked
         return self._compute_archetype()
 
-    def _compute_archetype(self):
+    def _compute_archetype(self) -> str:
         traits = {t.trait: t.value for t in self.traits.all()}
         for name, predicate in ARCHETYPE_RULES:
             if predicate(traits):
                 return name
         return "strange_one"
+
+    @property
+    def is_sick(self) -> bool:
+        return bool(self.disease)
+
+    @property
+    def overall_score(self) -> int:
+        return (self.hunger + self.happiness + self.energy + self.hygiene) // 4
+
+    @property
+    def hours_since_interaction(self) -> float:
+        return (timezone.now() - self.last_interaction_at).total_seconds() / 3600
+
+    def touch_interaction(self):
+        """Mark that the owner just did something. Resets neglect timers."""
+        self.last_interaction_at = timezone.now()
+        self.last_seen_at = timezone.now()
 
     def __str__(self):
         return f"{self.name} ({self.unique_code})"

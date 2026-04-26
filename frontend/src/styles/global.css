@@ -232,8 +232,109 @@ input, textarea {
 .bar { height: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; border-radius: 999px; transition: width 0.4s; }
 
+/* Chat box */
+.chat-box {
+    display: flex;
+    gap: 0.6rem;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    padding: 0.5rem;
+    border-radius: 14px;
+}
+.chat-box input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    padding: 0.6rem 0.8rem;
+    color: var(--text);
+}
+.chat-box input:focus { outline: none; }
+.chat-box .btn { padding: 0.5rem 1rem; }
+
+/* Trait panel */
+.trait-panel {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+}
+.trait-list { list-style: none; margin-top: 0.6rem; }
+.trait-row {
+    display: grid;
+    grid-template-columns: 100px 1fr 36px;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+.trait-bar {
+    position: relative;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.trait-pos, .trait-neg {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 999px;
+}
+.trait-pos { left: 50%; background: linear-gradient(90deg, #6dd3ff, #c084fc); max-width: 50%; }
+.trait-neg { right: 50%; background: linear-gradient(270deg, #ef4444, #f97316); max-width: 50%; }
+
+/* Coma + archetype reveal overlay */
+.coma-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 8, 32, 0.85);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 1rem;
+}
+.coma-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: 2rem;
+    max-width: 380px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.coma-heart {
+    background: rgba(255, 126, 179, 0.2);
+    border: 2px solid var(--primary);
+    color: var(--text);
+    font-size: 4rem;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    margin: 1rem 0;
+    cursor: pointer;
+    transition: transform 0.1s;
+    user-select: none;
+    touch-action: none;
+}
+.coma-heart:active { transform: scale(0.92); background: rgba(255, 126, 179, 0.5); }
+.coma-bar {
+    height: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 0.6rem;
+}
+.coma-bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #6dd3ff, #c084fc);
+    transition: width 0.2s;
+}
+
 @media (max-width: 600px) {
     .topbar { padding: 0.8rem 1rem; }
-    .game-controls { grid-template-columns: repeat(2, 1fr); }
+    .game-controls { grid-template-columns: repeat(3, 1fr); }
     .cert-grid { grid-template-columns: 1fr; }
 }
