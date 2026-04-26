@@ -1,0 +1,49 @@
+export interface Phenotype {
+    body_color_name: string;
+    body_color_hex: string;
+    eye_color_name: string;
+    eye_color_hex: string;
+    pattern: "solid" | "spots" | "stripes" | "patches" | "freckles";
+    ear_shape: "round" | "pointy" | "floppy" | "tufted" | "small";
+    tail_style: "long" | "short" | "fluffy" | "curly" | "stubby";
+    size_modifier: number;
+    temperament_seed: string;
+    talent: string;
+    fingerprint: number[];
+    accent_color_hex: string;
+    pattern_density: number;
+}
+
+export interface Companion {
+    id: number;
+    name: string;
+    unique_code: string;
+    species: string;
+    birth_at: string;
+    age_days: number;
+    founder_number: number | null;
+    is_founder: boolean;
+    parent_username_at_birth: string;
+    dna_seed: number;
+    phenotype: Phenotype;
+    archetype: string | null;
+    is_in_coma: boolean;
+}
+
+export interface Certificate {
+    name: string;
+    unique_code: string;
+    species: string;
+    birth_at: string;
+    parent_username: string;
+    founder_number: number | null;
+    is_founder: boolean;
+    phenotype: Phenotype;
+    verification_hint: string;
+}
+
+export interface Session {
+    authenticated: boolean;
+    username?: string;
+    has_companion?: boolean;
+}
