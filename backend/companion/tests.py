@@ -77,7 +77,7 @@ class ApiTests(TestCase):
         self.client.login(username="bob", password="strongpass1!")
         res = self.client.post(
             reverse("companion:hatch"),
-            data={"name": "Echo"},
+            data={"name": "Echo", "pledge_signature": "Bob the Guardian"},
             content_type="application/json",
         )
         self.assertEqual(res.status_code, 201)
@@ -88,13 +88,24 @@ class ApiTests(TestCase):
         cert_res = self.client.get(reverse("companion:certificate"))
         self.assertEqual(cert_res.status_code, 200)
         self.assertEqual(cert_res.json()["unique_code"], body["unique_code"])
+        self.assertEqual(cert_res.json()["pledge_signature"], "Bob the Guardian")
 
-    def test_cannot_hatch_twice(self):
-        Companion.hatch(owner=self.user, name="One")
+    def test_hatch_rejects_missing_pledge(self):
         self.client.login(username="bob", password="strongpass1!")
         res = self.client.post(
             reverse("companion:hatch"),
-            data={"name": "Two"},
+            data={"name": "NoPledge"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"], "pledge_missing")
+
+    def test_cannot_hatch_twice(self):
+        Companion.hatch(owner=self.user, name="One", pledge_signature="Bob")
+        self.client.login(username="bob", password="strongpass1!")
+        res = self.client.post(
+            reverse("companion:hatch"),
+            data={"name": "Two", "pledge_signature": "Bob"},
             content_type="application/json",
         )
         self.assertEqual(res.status_code, 409)

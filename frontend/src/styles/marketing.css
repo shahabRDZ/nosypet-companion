@@ -1,0 +1,376 @@
+/* ===========================================================
+   Welcome / Auth / Pledge — premium marketing surface.
+   =========================================================== */
+
+/* ---------- shared starfield ---------- */
+.welcome-stars span,
+.auth-stars span {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0.5;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
+    animation: twinkle 3.5s ease-in-out infinite;
+}
+.welcome-stars,
+.auth-stars {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+@keyframes twinkle {
+    0%, 100% { opacity: 0.2; transform: scale(0.7); }
+    50%      { opacity: 1;   transform: scale(1.1); }
+}
+
+/* ---------- welcome ---------- */
+.welcome {
+    position: relative;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    isolation: isolate;
+    padding: 4rem 1.5rem;
+}
+.welcome::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 126, 179, 0.18), transparent 50%),
+        radial-gradient(circle at 70% 80%, rgba(120, 90, 255, 0.22), transparent 50%);
+    pointer-events: none;
+}
+
+.welcome-orbits {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.welcome-orbit {
+    position: absolute;
+    filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.4));
+}
+.welcome-orbit.orbit-0 {
+    top: 12%; left: 8%;
+    animation: orbitFloat1 8s ease-in-out infinite;
+}
+.welcome-orbit.orbit-1 {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: orbitFloat2 10s ease-in-out infinite;
+    opacity: 0.95;
+}
+.welcome-orbit.orbit-2 {
+    bottom: 14%; right: 10%;
+    animation: orbitFloat3 9s ease-in-out infinite;
+}
+@keyframes orbitFloat1 {
+    0%, 100% { transform: translateY(0) rotate(-3deg); }
+    50%      { transform: translateY(-14px) rotate(3deg); }
+}
+@keyframes orbitFloat2 {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    50%      { transform: translate(-50%, -54%) scale(1.04); }
+}
+@keyframes orbitFloat3 {
+    0%, 100% { transform: translateY(0) rotate(2deg); }
+    50%      { transform: translateY(-10px) rotate(-3deg); }
+}
+
+@media (max-width: 800px) {
+    .welcome-orbit.orbit-0,
+    .welcome-orbit.orbit-2 { display: none; }
+    .welcome-orbit.orbit-1 { top: 18%; transform: translate(-50%, 0); }
+    @keyframes orbitFloat2 {
+        0%, 100% { transform: translate(-50%, 0) scale(0.85); }
+        50%      { transform: translate(-50%, -8px) scale(0.9); }
+    }
+}
+
+.welcome-hero {
+    position: relative;
+    z-index: 2;
+    max-width: 520px;
+    text-align: center;
+    background: rgba(20, 12, 40, 0.55);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 2.4rem 1.8rem;
+}
+@media (max-width: 800px) {
+    .welcome-hero { margin-top: 240px; }
+}
+
+.welcome-eyebrow {
+    display: inline-block;
+    font-size: 0.7rem;
+    letter-spacing: 4px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 1rem;
+}
+.welcome-hero h1 {
+    font-size: 2.1rem;
+    line-height: 1.18;
+    letter-spacing: -0.5px;
+    margin-bottom: 1rem;
+}
+.welcome-hero h1 em {
+    font-style: italic;
+    background: linear-gradient(180deg, #ffd6e8, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.welcome-hero .muted { font-size: 0.95rem; margin-bottom: 1.6rem; }
+.welcome-cta {
+    display: flex;
+    justify-content: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+}
+.welcome-btn {
+    background: linear-gradient(135deg, #ff7eb3 0%, #c084fc 100%);
+    box-shadow: 0 12px 30px rgba(192, 132, 252, 0.35);
+}
+.welcome-btn:hover { background: linear-gradient(135deg, #ff5a9b 0%, #a26bff 100%); }
+
+.welcome-pillars {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.8rem;
+    margin-top: 1rem;
+}
+.welcome-pillars li {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 0.8rem 0.7rem;
+    text-align: center;
+    font-size: 0.78rem;
+}
+.welcome-pillars strong {
+    display: block;
+    margin-bottom: 0.3rem;
+    color: var(--gold);
+    font-size: 0.85rem;
+}
+.welcome-pillars span { color: var(--muted); line-height: 1.3; }
+@media (max-width: 480px) {
+    .welcome-pillars { grid-template-columns: 1fr; }
+}
+
+/* ---------- auth ---------- */
+.auth-shell {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    min-height: calc(100vh - 70px);
+    overflow: hidden;
+}
+@media (max-width: 900px) {
+    .auth-shell { grid-template-columns: 1fr; }
+    .auth-art { min-height: 280px; }
+}
+
+.auth-art {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 20% 30%, rgba(192, 132, 252, 0.3), transparent 60%),
+        radial-gradient(circle at 80% 70%, rgba(255, 126, 179, 0.25), transparent 60%),
+        linear-gradient(160deg, #1a1230, #2a1a4a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 2rem;
+    text-align: center;
+}
+.auth-portrait {
+    position: relative;
+    z-index: 2;
+    margin-bottom: 1.4rem;
+    filter: drop-shadow(0 16px 40px rgba(0, 0, 0, 0.5));
+    animation: orbitFloat2 8s ease-in-out infinite;
+}
+.auth-art-text {
+    position: relative;
+    z-index: 2;
+    max-width: 360px;
+}
+.auth-eyebrow {
+    font-size: 0.7rem;
+    letter-spacing: 4px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 0.5rem;
+}
+.auth-art-text h2 {
+    font-size: 1.6rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(180deg, #fff, #c8b2ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.auth-form-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+}
+.auth-form {
+    width: 100%;
+    max-width: 380px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 2rem;
+}
+.auth-form h1 {
+    font-size: 1.4rem;
+    margin-bottom: 1.4rem;
+    text-align: center;
+}
+.auth-error {
+    color: #ffb3b3;
+    font-size: 0.9rem;
+    margin-bottom: 0.8rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 0.5rem 0.8rem;
+    border-radius: 10px;
+}
+
+/* ---------- guardianship pledge ---------- */
+.pledge-card {
+    max-width: 720px;
+    margin: 2rem auto;
+    background: rgba(20, 12, 40, 0.7);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 2rem 1.6rem;
+}
+.pledge-head {
+    text-align: center;
+    margin-bottom: 1.8rem;
+    padding-bottom: 1.4rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.pledge-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    letter-spacing: 4px;
+    color: var(--gold);
+    margin-bottom: 0.6rem;
+}
+.pledge-head h1 {
+    font-size: 1.7rem;
+    margin-bottom: 0.6rem;
+}
+.pledge-head .muted { max-width: 480px; margin: 0 auto; font-size: 0.95rem; }
+
+.commitments {
+    list-style: none;
+    display: grid;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
+}
+
+.commitment {
+    width: 100%;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    color: inherit;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 36px 1fr 24px;
+    gap: 0.8rem;
+    align-items: flex-start;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.commitment:hover { background: rgba(255, 255, 255, 0.07); }
+.commitment:active { transform: scale(0.99); }
+.commitment.checked {
+    background: rgba(255, 126, 179, 0.12);
+    border-color: rgba(255, 126, 179, 0.4);
+}
+.commitment-emoji {
+    font-size: 1.3rem;
+    line-height: 1;
+    align-self: center;
+}
+.commitment-text strong {
+    display: block;
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+}
+.commitment-text em {
+    font-style: normal;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+.commitment-check {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    color: var(--primary);
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+    align-self: center;
+    transition: background 0.15s, border-color 0.15s;
+}
+.commitment.checked .commitment-check {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.pledge-sign {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1.6rem;
+}
+.pledge-sign label {
+    display: block;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+.pledge-sign input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 0.7rem 0.9rem;
+    border-radius: 10px;
+    font-family: "SF Mono", Menlo, monospace;
+    letter-spacing: 1px;
+    font-size: 1rem;
+}
+.pledge-sign input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.pledge-sign small { display: block; margin-top: 0.5rem; font-size: 0.75rem; line-height: 1.4; }
+
+.pledge-actions { padding-top: 0.4rem; }

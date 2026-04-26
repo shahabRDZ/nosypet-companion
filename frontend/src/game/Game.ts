@@ -51,7 +51,9 @@ export class Game {
     private blackboard!: GameBlackboard;
     private tree!: Node;
     private mounted = false;
+    private destroyed = false;
     private resizeHandler?: () => void;
+    private actionTimers: number[] = [];
 
     constructor() {
         this.app = new Application();
@@ -60,7 +62,7 @@ export class Game {
     }
 
     public async mount(host: HTMLElement, phenotype: Phenotype, name: string): Promise<void> {
-        if (this.mounted) return;
+        if (this.mounted || this.destroyed) return;
         await this.app.init({
             background: 0x000000,
             antialias: true,
@@ -68,7 +70,12 @@ export class Game {
             autoDensity: true,
             resizeTo: host,
         });
-        host.appendChild(this.app.canvas);
+        // The owner may have unmounted us while init() was in flight.
+        if (this.destroyed) {
+            this.app.destroy(true, { children: true });
+            return;
+        }
+        if (host.isConnected) host.appendChild(this.app.canvas);
         this.app.stage.addChild(this.rootContainer);
 
         const layout = this.computeLayout();
@@ -122,6 +129,11 @@ export class Game {
     }
 
     public unmount(): void {
+        this.destroyed = true;
+        if (this.actionTimers.length) {
+            this.actionTimers.forEach((id) => clearInterval(id));
+            this.actionTimers = [];
+        }
         if (!this.mounted) return;
         if (this.resizeHandler) window.removeEventListener("resize", this.resizeHandler);
         this.app.destroy(true, { children: true });
@@ -130,61 +142,70 @@ export class Game {
 
     /* ------------------------- public commands ------------------------ */
 
-    public feed(): void {
-        const layout = this.room.layout;
-        this.blackboard.target = { x: layout.bowlPos.x, y: layout.bowlPos.y + 10, arrivedRadius: 18, arrived: false };
-        // Wait for arrival, then play eat for 2s.
-        const wait = setInterval(() => {
+    private waitForArrival(onArrived: () => void): void {
+        if (!this.isReady()) return;
+        const id = window.setInterval(() => {
+            if (this.destroyed) { clearInterval(id); return; }
             if (this.blackboard.target.arrived) {
-                clearInterval(wait);
-                this.creature.playAction("eat", 2000);
-                this.bbState.hunger = Math.min(100, this.bbState.hunger + 25);
-                this.particles.emit({
-                    x: this.creature.container.x, y: this.creature.container.y - 30,
-                    text: "🍞", count: 3, lifeMs: 1200,
-                });
+                clearInterval(id);
+                this.actionTimers = this.actionTimers.filter((t) => t !== id);
+                onArrived();
             }
         }, 50);
+        this.actionTimers.push(id);
+    }
+
+    public feed(): void {
+        if (!this.isReady()) return;
+        const layout = this.room.layout;
+        this.blackboard.target = { x: layout.bowlPos.x, y: layout.bowlPos.y + 10, arrivedRadius: 18, arrived: false };
+        this.waitForArrival(() => {
+            this.creature.playAction("eat", 2000);
+            this.bbState.hunger = Math.min(100, this.bbState.hunger + 25);
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 30,
+                text: "🍞", count: 3, lifeMs: 1200,
+            });
+        });
     }
 
     public play(): void {
+        if (!this.isReady()) return;
         const layout = this.room.layout;
         this.blackboard.target = { x: layout.toyPos.x, y: layout.toyPos.y + 6, arrivedRadius: 18, arrived: false };
-        const wait = setInterval(() => {
-            if (this.blackboard.target.arrived) {
-                clearInterval(wait);
-                this.creature.playAction("play_with_toy", 2500);
-                this.bbState.happiness = Math.min(100, this.bbState.happiness + 25);
-                this.bbState.energy = Math.max(0, this.bbState.energy - 10);
-                this.particles.emit({
-                    x: this.creature.container.x, y: this.creature.container.y - 30,
-                    text: "❤️", count: 4, lifeMs: 1300,
-                });
-            }
-        }, 50);
+        this.waitForArrival(() => {
+            this.creature.playAction("play_with_toy", 2500);
+            this.bbState.happiness = Math.min(100, this.bbState.happiness + 25);
+            this.bbState.energy = Math.max(0, this.bbState.energy - 10);
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 30,
+                text: "❤️", count: 4, lifeMs: 1300,
+            });
+        });
     }
 
     public sleep(): void {
+        if (!this.isReady()) return;
         const layout = this.room.layout;
         this.blackboard.target = { x: layout.bedPos.x, y: layout.bedPos.y + 8, arrivedRadius: 22, arrived: false };
-        const wait = setInterval(() => {
-            if (this.blackboard.target.arrived) {
-                clearInterval(wait);
-                this.creature.playAction("sleep", 4000);
-                this.bbState.energy = Math.min(100, this.bbState.energy + 35);
-                const emit = setInterval(() => {
-                    this.particles.emit({
-                        x: this.creature.container.x + 20,
-                        y: this.creature.container.y - 30,
-                        text: "Z", count: 1, lifeMs: 1500, size: 22,
-                    });
-                }, 600);
-                setTimeout(() => clearInterval(emit), 4000);
-            }
-        }, 50);
+        this.waitForArrival(() => {
+            this.creature.playAction("sleep", 4000);
+            this.bbState.energy = Math.min(100, this.bbState.energy + 35);
+            const id = window.setInterval(() => {
+                if (this.destroyed) { clearInterval(id); return; }
+                this.particles.emit({
+                    x: this.creature.container.x + 20,
+                    y: this.creature.container.y - 30,
+                    text: "Z", count: 1, lifeMs: 1500, size: 22,
+                });
+            }, 600);
+            this.actionTimers.push(id);
+            setTimeout(() => clearInterval(id), 4000);
+        });
     }
 
     public pet(): void {
+        if (!this.isReady()) return;
         this.creature.playAction("look_at_camera", 1200);
         this.bbState.happiness = Math.min(100, this.bbState.happiness + 5);
         this.particles.emit({
@@ -195,14 +216,31 @@ export class Game {
         this.creature.say("That feels nice", 1800);
     }
 
+    public emitSneeze(): void {
+        if (!this.isReady()) return;
+        this.creature.playAction("sneeze", 1100);
+        this.particles.emit({
+            x: this.creature.container.x, y: this.creature.container.y - 30,
+            text: "💧", count: 1,
+        });
+    }
+
     public say(text: string, durationMs?: number): void {
         this.creature.say(text, durationMs);
+    }
+
+    public isReady(): boolean {
+        return this.mounted && !!this.bbState;
     }
 
     /**
      * Update the creature's mood/state from the server. Lets the
      * server be authoritative for hunger/happiness/energy/sickness
      * while the client still drives spontaneous animation.
+     *
+     * Safe to call before mount() finishes: it no-ops until the
+     * blackboard is initialized, since calling code (React effects)
+     * may race the async PixiJS init.
      */
     public applyServerState(s: {
         hunger?: number;
@@ -212,20 +250,13 @@ export class Game {
         is_sick?: boolean;
         is_in_coma?: boolean;
     }): void {
+        if (!this.bbState) return;
         if (s.hunger !== undefined) this.bbState.hunger = s.hunger;
         if (s.happiness !== undefined) this.bbState.happiness = s.happiness;
         if (s.energy !== undefined) this.bbState.energy = s.energy;
         if (s.hygiene !== undefined) this.bbState.hygiene = s.hygiene;
         if (s.is_sick !== undefined) this.bbState.sick = s.is_sick;
         if (s.is_in_coma !== undefined) this.bbState.inComa = s.is_in_coma;
-    }
-
-    public emitSneeze(): void {
-        this.creature.playAction("sneeze", 1100);
-        this.particles.emit({
-            x: this.creature.container.x, y: this.creature.container.y - 30,
-            text: "💧", count: 1,
-        });
     }
 
     public getStateSnapshot(): CreatureState {

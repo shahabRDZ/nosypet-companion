@@ -69,6 +69,8 @@ export interface Certificate {
     is_founder: boolean;
     phenotype: Phenotype;
     verification_hint: string;
+    pledge_signature: string;
+    pledge_signed_at: string | null;
 }
 
 export interface Session {

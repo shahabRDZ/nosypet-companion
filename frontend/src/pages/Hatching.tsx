@@ -4,16 +4,32 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { sound } from "../audio/Sounds";
 import { CompanionPortrait } from "../components/CompanionPortrait";
+import { GuardianshipPledge } from "../components/GuardianshipPledge";
 import { useSession } from "../store/session";
+
+type Stage = "pledge" | "name" | "summoning" | "reveal";
 
 export function HatchingPage() {
     const navigate = useNavigate();
     const setCompanion = useSession((s) => s.setCompanion);
+    const [stage, setStage] = useState<Stage>("pledge");
+    const [signature, setSignature] = useState("");
     const [name, setName] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [stage, setStage] = useState<"name" | "summoning" | "reveal">("name");
     const [companion, setLocalCompanion] = useState<import("../types/companion").Companion | null>(null);
+
+    if (stage === "pledge") {
+        return (
+            <GuardianshipPledge
+                onCancel={() => navigate("/")}
+                onAccept={(sig) => {
+                    setSignature(sig);
+                    setStage("name");
+                }}
+            />
+        );
+    }
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
@@ -25,7 +41,7 @@ export function HatchingPage() {
         try {
             await api.csrf();
             const [created] = await Promise.all([
-                api.hatch({ name }),
+                api.hatch({ name, pledge_signature: signature }),
                 new Promise((r) => setTimeout(r, 1800)),
             ]);
             setLocalCompanion(created);
@@ -43,10 +59,13 @@ export function HatchingPage() {
         return (
             <main className="shell">
                 <section className="card" style={{ maxWidth: 460, margin: "3rem auto" }}>
-                    <h1 className="center" style={{ marginBottom: "0.4rem" }}>Name your companion</h1>
+                    <p className="muted center" style={{ fontSize: "0.8rem", letterSpacing: 2 }}>
+                        STEP 2 OF 3 · NAMING
+                    </p>
+                    <h1 className="center" style={{ marginBottom: "0.4rem" }}>Give them a name</h1>
                     <p className="muted center" style={{ marginBottom: "1.6rem" }}>
-                        Their DNA is rolling up right now. The name you give them is permanent
-                        for today, but you can change it later.
+                        Their DNA is set. They will know themselves by this name. You can
+                        rename them later, but the original is recorded on the passport forever.
                     </p>
                     <form onSubmit={handleSubmit}>
                         <div className="field">
@@ -55,15 +74,18 @@ export function HatchingPage() {
                                 onChange={(e) => setName(e.target.value)}
                                 maxLength={30}
                                 required
-                                placeholder="e.g. Pixel"
+                                placeholder="e.g. Pixel, Echo, Mira..."
                                 autoFocus
                             />
                         </div>
                         {error && <p style={{ color: "#ffb3b3", marginBottom: "0.8rem" }}>{error}</p>}
                         <button className="btn" style={{ width: "100%" }} disabled={busy || !name.trim()}>
-                            Begin life
+                            Bring them to life
                         </button>
                     </form>
+                    <p className="muted center" style={{ fontSize: "0.8rem", marginTop: "1rem" }}>
+                        Signed as: <strong style={{ color: "#fff" }}>{signature}</strong>
+                    </p>
                 </section>
             </main>
         );
@@ -117,7 +139,7 @@ export function HatchingPage() {
                     </p>
                     <div className="row-center" style={{ marginTop: "1.8rem" }}>
                         <button className="btn" onClick={() => navigate("/app/certificate")}>
-                            View certificate
+                            View passport
                         </button>
                         <button className="btn btn-ghost" onClick={() => navigate("/app/play")}>
                             Enter the room

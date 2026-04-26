@@ -38,4 +38,6 @@ def serialize_certificate(c: Companion) -> dict:
         "is_founder": c.founder_number is not None,
         "phenotype": pheno.to_dict(),
         "verification_hint": dna.unique_code(c.dna_seed),
+        "pledge_signature": c.pledge_signature,
+        "pledge_signed_at": c.pledge_signed_at.isoformat() if c.pledge_signed_at else None,
     }

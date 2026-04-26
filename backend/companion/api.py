@@ -147,7 +147,20 @@ def hatch(request):
     name = (data.get("name") or "").strip()
     if not name or len(name) > 30:
         return _err("Name must be 1-30 characters.")
-    c = Companion.hatch(owner=request.user, name=name)
+    pledge_signature = (data.get("pledge_signature") or "").strip()
+    if not pledge_signature:
+        return _err(
+            "Guardianship pledge required. Sign the commitment form first.",
+            "pledge_missing",
+            400,
+        )
+    if len(pledge_signature) > 80:
+        return _err("Signature too long.")
+    c = Companion.hatch(
+        owner=request.user,
+        name=name,
+        pledge_signature=pledge_signature,
+    )
     return JsonResponse(serialize_companion(c), status=201)
 
 

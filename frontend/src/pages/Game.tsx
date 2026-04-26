@@ -16,19 +16,25 @@ export function GamePage() {
     const [archetypeRevealed, setArchetypeRevealed] = useState(false);
     const sickTimerRef = useRef<number | undefined>(undefined);
 
-    // Mount the canvas once the companion arrives.
+    // Mount the canvas exactly once per companion. Re-creating the
+    // PixiJS app on every poll caused the room to reset every 7s.
+    const companionId = live.state?.id ?? null;
     useEffect(() => {
-        if (!hostRef.current || !live.state || gameRef.current) return;
-        const game = new Game();
-        gameRef.current = game;
-        game.mount(hostRef.current, live.state.phenotype, live.state.name);
+        if (!hostRef.current || !companionId || !live.state) return;
+        const g = new Game();
+        gameRef.current = g;
+        g.mount(hostRef.current, live.state.phenotype, live.state.name).catch((err) => {
+            console.error("Game mount failed:", err);
+        });
         return () => {
-            gameRef.current?.unmount();
-            gameRef.current = null;
+            g.unmount();
+            if (gameRef.current === g) gameRef.current = null;
         };
-    }, [live.state]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [companionId]);
 
-    // Keep canvas state in sync with server.
+    // Keep canvas state in sync with server. Idempotent and safe to
+    // call before mount() finishes.
     useEffect(() => {
         if (!gameRef.current || !live.state) return;
         gameRef.current.applyServerState({
