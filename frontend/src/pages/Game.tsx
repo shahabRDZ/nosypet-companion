@@ -6,6 +6,7 @@ import { ActionDock, type Action } from "../components/ActionDock";
 import { ComaOverlay } from "../components/ComaOverlay";
 import { GameHUD } from "../components/GameHUD";
 import { Onboarding } from "../components/Onboarding";
+import { SceneNavigator } from "../components/SceneNavigator";
 import { TraitPanel } from "../components/TraitPanel";
 import { Game } from "../game/Game";
 import { useLiveCompanion } from "../store/useLiveCompanion";
@@ -17,7 +18,17 @@ export function GamePage() {
     const [archetypeRevealed, setArchetypeRevealed] = useState(false);
     const [chatValue, setChatValue] = useState("");
     const [chatBusy, setChatBusy] = useState(false);
+    const [scene, setScene] = useState<string>("bedroom");
     const sickTimerRef = useRef<number | undefined>(undefined);
+
+    // Poll the active scene from Game so the SceneNavigator stays in sync.
+    useEffect(() => {
+        const id = window.setInterval(() => {
+            const s = gameRef.current?.getCurrentScene();
+            if (s && s !== scene) setScene(s);
+        }, 250);
+        return () => window.clearInterval(id);
+    }, [scene]);
 
     const companionId = live.state?.id ?? null;
     useEffect(() => {
@@ -135,6 +146,14 @@ export function GamePage() {
             <div className="game-stage">
                 <div className="game-viewport" ref={hostRef} />
                 <GameHUD companion={c} />
+                <SceneNavigator scenes={[
+                    { key: "bedroom", icon: "🛏",  label: "Bedroom", active: scene === "bedroom",
+                      onClick: () => { sound.unlock(); void gameRef.current?.goBedroom(); } },
+                    { key: "living",  icon: "🛋",  label: "Living",  active: scene === "living",
+                      onClick: () => { sound.unlock(); void gameRef.current?.goLiving(); } },
+                    { key: "nursery", icon: "🧸",  label: "Nursery", active: scene === "nursery",
+                      onClick: () => { sound.unlock(); void gameRef.current?.goNursery(); } },
+                ]} />
                 {moodLine && <div className="mood-line">{moodLine}</div>}
 
                 <form className="chat-chip" onSubmit={sendChat}>
