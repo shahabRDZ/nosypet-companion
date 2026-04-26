@@ -16,6 +16,7 @@
 import { Application, Container, Graphics } from "pixi.js";
 
 import type { Phenotype } from "../types/companion";
+import { AmbientLayer } from "./Ambient";
 import { Bathroom, type BathroomLayout } from "./Bathroom";
 import {
     Action,
@@ -30,11 +31,13 @@ import {
 import { Creature } from "./Creature";
 import { Garden, type GardenLayout } from "./Garden";
 import { Kitchen, type KitchenLayout } from "./Kitchen";
+import { LivingRoom, type LivingRoomLayout } from "./LivingRoom";
+import { Nursery, type NurseryLayout } from "./Nursery";
 import { ParticleSystem } from "./Particles";
 import { Room, type RoomLayout } from "./Room";
 import type { ActionName, CreatureState, RoomBounds } from "./types";
 
-type SceneKind = "bedroom" | "bathroom" | "kitchen" | "garden";
+type SceneKind = "bedroom" | "bathroom" | "kitchen" | "garden" | "living" | "nursery";
 
 interface SceneEntry {
     container: Container;
@@ -44,6 +47,15 @@ interface SceneEntry {
     width: number;
     height: number;
     update?: (dt: number, isNight: boolean) => void;
+}
+
+interface Hotspot {
+    x: number;
+    y: number;
+    radius: number;
+    onTap: () => void;
+    glow: Graphics;          // a pulsing ring rendered behind the object
+    proximityActive: boolean;
 }
 
 interface GameBlackboard extends BlackboardLike {
@@ -63,8 +75,15 @@ export class Game {
     private bathroom!: Bathroom;
     private kitchen!: Kitchen;
     private garden!: Garden;
+    private living!: LivingRoom;
+    private nursery!: Nursery;
     private currentScene: SceneKind = "bedroom";
     private fadeOverlay!: Graphics;
+    private ambient!: AmbientLayer;
+    private highlightLayer!: Container;
+    /** Interactable hotspots, keyed by scene. Each has world coords +
+     *  the action that fires when the creature is near. */
+    private interactables = new Map<SceneKind, Hotspot[]>();
     private creature!: Creature;
     private particles!: ParticleSystem;
     private bbState!: CreatureState;
@@ -112,11 +131,26 @@ export class Game {
         this.rootContainer.addChild(this.room.container);
         this.rootContainer.addChild(this.creature.container);
 
-        // Build the other three scenes lazily but immediately so
-        // scene transitions are instant (no async load).
+        // Build the other scenes immediately so transitions are
+        // instant (no async load).
         this.bathroom = new Bathroom(this.computeBathroomLayout(layout));
         this.kitchen = new Kitchen(this.computeKitchenLayout(layout));
         this.garden = new Garden(this.computeGardenLayout(layout));
+        this.living = new LivingRoom(this.computeLivingLayout(layout));
+        this.nursery = new Nursery(this.computeNurseryLayout(layout));
+
+        // Ambient atmosphere lives above the active scene but below
+        // the creature's speech bubble.
+        this.ambient = new AmbientLayer(layout.width, layout.height, 24);
+        this.rootContainer.addChild(this.ambient.container);
+
+        // Highlight rings for interactable objects render in their own
+        // layer so they show through scene contents.
+        this.highlightLayer = new Container();
+        this.highlightLayer.zIndex = 9;
+        this.rootContainer.addChild(this.highlightLayer);
+
+        this.registerInteractables();
 
         // Fade overlay for scene transitions.
         this.fadeOverlay = new Graphics();
@@ -166,6 +200,7 @@ export class Game {
             this.room.layout.width = newLayout.width;
             this.room.layout.height = newLayout.height;
             this.room.layout.floorY = newLayout.floorY;
+            this.ambient.resize(newLayout.width, newLayout.height);
             this.blackboard.bounds = this.computeBounds(newLayout);
         };
         window.addEventListener("resize", this.resizeHandler);
@@ -311,6 +346,34 @@ export class Game {
         this.creature.say("That feels nice", 1800);
     }
 
+    /** Navigate to the living room. */
+    public goLiving(): Promise<void> {
+        return this.enqueue(async () => {
+            await this.slideToScene("living");
+            this.creature.setPosition(this.living.layout.width * 0.32, this.living.layout.floorY + 30);
+            this.creature.setFacing(1);
+        });
+    }
+
+    /** Navigate to the nursery. */
+    public goNursery(): Promise<void> {
+        return this.enqueue(async () => {
+            await this.slideToScene("nursery");
+            this.creature.setPosition(this.nursery.layout.width * 0.3, this.nursery.layout.floorY + 30);
+            this.creature.setFacing(1);
+        });
+    }
+
+    /** Return home to the bedroom. */
+    public goBedroom(): Promise<void> {
+        return this.enqueue(async () => {
+            await this.slideToScene("bedroom");
+            this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
+        });
+    }
+
+    public getCurrentScene(): SceneKind { return this.currentScene; }
+
     /** Full bath sequence: transition to bathroom, walk to tub, three
      *  rub cycles with bubble particles, shake-off, transition back. */
     public wash(): Promise<void> {
@@ -434,6 +497,7 @@ export class Game {
     /* ------------------------- internals ------------------------ */
 
     private tick(deltaMs: number): void {
+        this.elapsed += deltaMs;
         // Decay over real time, very slow.
         const minutes = deltaMs / 60000;
         this.bbState.hunger = Math.max(0, this.bbState.hunger - 1.2 * minutes);
@@ -446,6 +510,9 @@ export class Game {
         })();
         const scene = this.getSceneEntry(this.currentScene);
         scene.update?.(deltaMs, isNight);
+        this.ambient.setMode(isNight ? "night" : "day");
+        this.ambient.update(deltaMs);
+        this.updateHotspotGlows(deltaMs);
         this.tree.tick(deltaMs, this.blackboard);
         if (this.cursor) {
             const local = this.creature.container.toLocal({ x: this.cursor.x, y: this.cursor.y });
@@ -499,11 +566,56 @@ export class Game {
             container: this.kitchen.container, fxLayer: this.kitchen.fxLayer, fgLayer: this.kitchen.fgLayer,
             floorY: this.kitchen.layout.floorY, width: this.kitchen.layout.width, height: this.kitchen.layout.height,
         };
+        if (kind === "living") return {
+            container: this.living.container, fxLayer: this.living.fxLayer, fgLayer: this.living.fgLayer,
+            floorY: this.living.layout.floorY, width: this.living.layout.width, height: this.living.layout.height,
+            update: (dt) => this.living.update(dt),
+        };
+        if (kind === "nursery") return {
+            container: this.nursery.container, fxLayer: this.nursery.fxLayer, fgLayer: this.nursery.fgLayer,
+            floorY: this.nursery.layout.floorY, width: this.nursery.layout.width, height: this.nursery.layout.height,
+            update: (dt) => this.nursery.update(dt),
+        };
         return {
             container: this.garden.container, fxLayer: this.garden.fxLayer, fgLayer: this.garden.fgLayer,
             floorY: this.garden.layout.floorY, width: this.garden.layout.width, height: this.garden.layout.height,
             update: (dt) => this.garden.update(dt),
         };
+    }
+
+    /** Build a Hotspot entry per scene with a pulsing glow ring. */
+    private registerInteractables(): void {
+        const make = (_scene: SceneKind, x: number, y: number, radius: number, onTap: () => void): Hotspot => {
+            const glow = new Graphics();
+            glow.visible = false;
+            glow.x = x; glow.y = y;
+            this.highlightLayer.addChild(glow);
+            const hs: Hotspot = { x, y, radius, onTap, glow, proximityActive: false };
+            return hs;
+        };
+        const room = this.room.layout;
+        this.interactables.set("bedroom", [
+            make("bedroom", room.bowlPos.x, room.bowlPos.y, 36, () => this.feed()),
+            make("bedroom", room.bedPos.x,  room.bedPos.y,  46, () => this.sleep()),
+            make("bedroom", room.toyPos.x,  room.toyPos.y,  28, () => this.play()),
+        ]);
+        const k = this.kitchen.layout;
+        this.interactables.set("kitchen", [
+            make("kitchen", k.bowlPos.x, k.bowlPos.y, 38, () => this.feed()),
+        ]);
+        const g = this.garden.layout;
+        this.interactables.set("garden", [
+            make("garden", g.toyPos.x, g.toyPos.y, 32, () => this.play()),
+        ]);
+        const liv = this.living.layout;
+        this.interactables.set("living", [
+            make("living", liv.sofaPos.x, liv.sofaPos.y, 60, () => this.pet()),
+        ]);
+        const nur = this.nursery.layout;
+        this.interactables.set("nursery", [
+            make("nursery", nur.cribPos.x, nur.cribPos.y, 70, () => this.sleep()),
+        ]);
+        // Bathroom hotspot is handled by the wash sequence itself.
     }
 
     /** Slide transition: old scene exits left, new scene enters from
@@ -569,33 +681,83 @@ export class Game {
         };
     }
 
+    private computeLivingLayout(roomLayout: RoomLayout): LivingRoomLayout {
+        return {
+            width: roomLayout.width,
+            height: roomLayout.height,
+            floorY: roomLayout.floorY,
+            sofaPos: { x: roomLayout.width * 0.42, y: roomLayout.floorY - 4 },
+        };
+    }
+
+    private computeNurseryLayout(roomLayout: RoomLayout): NurseryLayout {
+        return {
+            width: roomLayout.width,
+            height: roomLayout.height,
+            floorY: roomLayout.floorY,
+            cribPos: { x: roomLayout.width * 0.5, y: roomLayout.floorY - 16 },
+        };
+    }
+
     private drawFadeOverlay(width: number, height: number): void {
         this.fadeOverlay.clear();
         this.fadeOverlay.rect(0, 0, width, height).fill(0x000000);
     }
 
-    /** Tap on bowl/bed/toy in the room to trigger the matching action.
-     *  Uses hit areas tied to the layout positions. */
+    /** Tap-on-object: each hotspot has a hit container in highlightLayer
+     *  that lights up when the creature is close. Tapping it triggers
+     *  the action. */
     private attachSceneTaps(): void {
-        const room = this.room;
-        const layout = room.layout;
-        const make = (x: number, y: number, w: number, h: number, onTap: () => void) => {
-            const hit = new Container();
-            hit.eventMode = "static";
-            hit.cursor = "pointer";
-            // Provide a transparent graphics so hit-test has a shape.
-            const g = new Graphics();
-            g.rect(-w / 2, -h / 2, w, h).fill({ color: 0xffffff, alpha: 0.001 });
-            hit.addChild(g);
-            hit.x = x; hit.y = y;
-            hit.zIndex = 50;
-            hit.on("pointertap", () => onTap());
-            this.room.fgLayer.addChild(hit);
-        };
-        make(layout.bowlPos.x, layout.bowlPos.y, 60, 40, () => this.feed());
-        make(layout.bedPos.x, layout.bedPos.y, 110, 50, () => this.sleep());
-        make(layout.toyPos.x, layout.toyPos.y, 36, 36, () => this.play());
+        for (const [, list] of this.interactables) {
+            for (const hs of list) {
+                hs.glow.eventMode = "static";
+                hs.glow.cursor = "pointer";
+                hs.glow.on("pointertap", () => hs.onTap());
+            }
+        }
     }
+
+    /** Pulse the glow rings for hotspots in the active scene, brighter
+     *  when the creature is within the proximity radius. */
+    private updateHotspotGlows(deltaMs: number): void {
+        const t = this.elapsed / 600;
+        for (const [scene, list] of this.interactables) {
+            const inActive = scene === this.currentScene && !this.destroyed;
+            for (const hs of list) {
+                if (!inActive) {
+                    hs.glow.visible = false;
+                    hs.proximityActive = false;
+                    continue;
+                }
+                const dx = this.creature.container.x - hs.x;
+                const dy = this.creature.container.y - hs.y;
+                const dist = Math.hypot(dx, dy);
+                const near = dist <= hs.radius * 1.6;
+                hs.glow.visible = true;
+                hs.proximityActive = near;
+                hs.glow.clear();
+                const baseR = hs.radius;
+                const pulse = 1 + Math.sin(t) * 0.06;
+                if (near) {
+                    // Strong concentric rings + warm fill
+                    hs.glow.circle(0, 0, baseR * 1.0 * pulse)
+                        .stroke({ color: 0xffd84a, width: 3, alpha: 0.85 });
+                    hs.glow.circle(0, 0, baseR * 1.25 * pulse)
+                        .stroke({ color: 0xffd84a, width: 2, alpha: 0.45 });
+                    hs.glow.circle(0, 0, baseR)
+                        .fill({ color: 0xffd84a, alpha: 0.08 });
+                } else {
+                    // Subtle hint ring
+                    hs.glow.circle(0, 0, baseR * 0.95)
+                        .stroke({ color: 0xffffff, width: 1.5, alpha: 0.35 });
+                }
+            }
+        }
+        void deltaMs;
+    }
+
+    /** Track elapsed time for animations. */
+    private elapsed = 0;
 
     private computeLayout(): RoomLayout {
         const width = this.app.canvas.width / (window.devicePixelRatio || 1);
