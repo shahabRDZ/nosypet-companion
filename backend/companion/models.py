@@ -167,7 +167,12 @@ class CompanionTrait(models.Model):
 
 
 class CompanionMemory(models.Model):
-    """Structured facts only. No raw transcripts ever."""
+    """Structured facts only. No raw transcripts ever.
+
+    `value` is stored encrypted at rest (Fernet) so a database leak does
+    not expose owner-specific facts. Use the `plain_value` property to
+    read and `set_plain_value()` to write.
+    """
 
     FACT_OWNER_NAME = "owner_name"
     FACT_PREFERENCE = "preference"
@@ -185,7 +190,7 @@ class CompanionMemory(models.Model):
     companion = models.ForeignKey(Companion, on_delete=models.CASCADE, related_name="memories")
     fact_type = models.CharField(max_length=20, choices=FACT_CHOICES)
     key = models.CharField(max_length=80)
-    value = models.TextField()
+    value = models.TextField()  # encrypted
     confidence = models.FloatField(default=0.5)
     learned_at = models.DateTimeField(auto_now_add=True)
     last_referenced_at = models.DateTimeField(default=timezone.now)
@@ -194,6 +199,15 @@ class CompanionMemory(models.Model):
         ordering = ["-learned_at"]
         indexes = [models.Index(fields=["companion", "fact_type"])]
         unique_together = [("companion", "fact_type", "key")]
+
+    @property
+    def plain_value(self) -> str:
+        from . import crypto
+        return crypto.decrypt(self.value)
+
+    def set_plain_value(self, plain: str) -> None:
+        from . import crypto
+        self.value = crypto.encrypt(plain)
 
 
 class BehaviorEvent(models.Model):
@@ -205,3 +219,20 @@ class BehaviorEvent(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["companion", "-created_at"])]
+
+
+class Disease(models.Model):
+    """Disease catalogue stored in the database so admins can add new
+    illnesses without redeploying. The `sickness` module reads from
+    here and falls back to defaults if the table is empty."""
+
+    slug = models.SlugField(max_length=32, unique=True)
+    label = models.CharField(max_length=80)
+    severity = models.PositiveSmallIntegerField(default=1)
+    duration_hours = models.PositiveIntegerField(default=24)
+    symptoms = models.JSONField(default=list)
+    cure_items = models.JSONField(default=list)
+    weight = models.FloatField(default=1.0)
+
+    def __str__(self):
+        return f"{self.label} ({self.slug})"

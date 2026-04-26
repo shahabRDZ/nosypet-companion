@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
     Link,
     Navigate,
@@ -11,12 +11,18 @@ import {
 import { sound } from "./audio/Sounds";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { InstallPrompt } from "./components/InstallPrompt";
+import { ToastHost } from "./components/ToastHost";
 import { AuthPage } from "./pages/Auth";
-import { CertificatePage } from "./pages/Certificate";
-import { GamePage } from "./pages/Game";
-import { HatchingPage } from "./pages/Hatching";
 import { WelcomePage } from "./pages/Welcome";
 import { useSession } from "./store/session";
+
+// Heavy pages (PixiJS, html-to-image, qrcode) ship in their own chunks
+// so the marketing surface stays light.
+const GamePage        = lazy(() => import("./pages/Game").then(m => ({ default: m.GamePage })));
+const HatchingPage    = lazy(() => import("./pages/Hatching").then(m => ({ default: m.HatchingPage })));
+const CertificatePage = lazy(() => import("./pages/Certificate").then(m => ({ default: m.CertificatePage })));
+const MemoriesPage    = lazy(() => import("./pages/Memories").then(m => ({ default: m.MemoriesPage })));
+const AccountPage     = lazy(() => import("./pages/Account").then(m => ({ default: m.AccountPage })));
 
 export function App() {
     return (
@@ -26,6 +32,7 @@ export function App() {
                 <div className="app">
                     <Topbar />
                     <InstallPrompt />
+                    <ToastHost />
                     <Routes>
                         <Route path="/" element={<WelcomePage />} />
                         <Route path="/login" element={<AuthPage mode="login" />} />
@@ -62,8 +69,9 @@ function Topbar() {
                 </button>
                 {session?.authenticated ? (
                     <>
-                        <Link to="/app">Companion</Link>
-                        <span className="muted">@{session.username}</span>
+                        <Link to="/app">Room</Link>
+                        <Link to="/app/memories">Memories</Link>
+                        <Link to="/app/account">@{session.username}</Link>
                         <button className="btn-ghost btn" style={{ padding: "0.4rem 0.9rem" }} onClick={() => logout()}>
                             Log out
                         </button>
@@ -88,12 +96,16 @@ function AuthedRoutes() {
     if (!session?.authenticated) return <Navigate to="/login" replace />;
 
     return (
-        <Routes>
-            <Route index element={<HomeOrHatching companion={companion} />} />
-            <Route path="hatch" element={<HatchingPage />} />
-            <Route path="certificate" element={<CertificatePage />} />
-            <Route path="play" element={<GamePage />} />
-        </Routes>
+        <Suspense fallback={<main className="shell"><p className="muted">Loading...</p></main>}>
+            <Routes>
+                <Route index element={<HomeOrHatching companion={companion} />} />
+                <Route path="hatch" element={<HatchingPage />} />
+                <Route path="certificate" element={<CertificatePage />} />
+                <Route path="play" element={<GamePage />} />
+                <Route path="memories" element={<MemoriesPage />} />
+                <Route path="account" element={<AccountPage />} />
+            </Routes>
+        </Suspense>
     );
 }
 

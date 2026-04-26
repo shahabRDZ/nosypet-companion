@@ -11,7 +11,9 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
-from . import llm, services, sickness
+import threading
+
+from . import llm, safety, services, sickness
 from .models import Companion
 from .serializers import serialize_certificate, serialize_companion
 
@@ -126,6 +128,76 @@ def logout_view(request):
     return JsonResponse({"authenticated": False})
 
 
+@login_required
+@require_POST
+@ratelimit(key="user", rate="3/m", method="POST", block=True)
+def logout_all(request):
+    """Invalidate every session for this user (this device + others)."""
+    from django.contrib.sessions.models import Session
+    user_id = request.user.pk
+    for s in Session.objects.all():
+        data = s.get_decoded()
+        if data.get("_auth_user_id") == str(user_id):
+            s.delete()
+    logout(request)
+    return JsonResponse({"authenticated": False, "logged_out_all": True})
+
+
+@login_required
+@require_GET
+@ratelimit(key="user", rate="3/m", method="GET", block=True)
+def export_data(request):
+    """GDPR-style data export."""
+    from . import crypto
+    payload = {
+        "user": {
+            "username": request.user.username,
+            "email": request.user.email,
+            "date_joined": request.user.date_joined.isoformat(),
+        },
+        "companion": None,
+        "traits": [],
+        "memories": [],
+        "events": [],
+    }
+    try:
+        c = request.user.companion
+    except Companion.DoesNotExist:
+        return JsonResponse(payload)
+    payload["companion"] = serialize_certificate(c)
+    payload["traits"] = [
+        {"trait": t.trait, "value": t.value, "updated_at": t.updated_at.isoformat()}
+        for t in c.traits.all()
+    ]
+    payload["memories"] = [
+        {
+            "fact_type": m.fact_type, "key": m.key,
+            "value": crypto.decrypt(m.value), "confidence": m.confidence,
+            "learned_at": m.learned_at.isoformat(),
+        } for m in c.memories.all()
+    ]
+    payload["events"] = [
+        {"type": e.event_type, "detail": e.detail, "created_at": e.created_at.isoformat()}
+        for e in c.events.all()[:1000]
+    ]
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+@ratelimit(key="user", rate="2/m", method="POST", block=True)
+def delete_account(request):
+    """Permanently remove the user, their companion, traits, memories,
+    and behavior log. Requires the username in the body as confirmation."""
+    confirm = (_json(request).get("confirm_username") or "").strip()
+    if confirm != request.user.username:
+        return _err("Confirmation does not match your username.", "confirm_required", 400)
+    user = request.user
+    logout(request)
+    user.delete()
+    return JsonResponse({"deleted": True})
+
+
 # ---------------------------------------------------------------------
 # Companion
 # ---------------------------------------------------------------------
@@ -156,6 +228,12 @@ def hatch(request):
         )
     if len(pledge_signature) > 80:
         return _err("Signature too long.")
+    if safety.has_profanity(pledge_signature):
+        return _err(
+            "Please use a respectful name for your guardian signature.",
+            "signature_unacceptable",
+            400,
+        )
     c = Companion.hatch(
         owner=request.user,
         name=name,
@@ -245,6 +323,20 @@ def revive(request):
 
 # Chat ----------------------------------------------------------------
 
+def _extract_in_background(companion_id: int, message: str) -> None:
+    """Run memory extraction off the request path. Threading is fine
+    for our scale; Celery is a Phase 5 upgrade."""
+    try:
+        c = Companion.objects.get(pk=companion_id)
+        facts = llm.extract_memories(c, message)
+        if facts:
+            llm.upsert_memories(c, facts)
+    except Exception:
+        # Background failures should not crash the worker.
+        import logging
+        logging.getLogger("companion").warning("memory extraction failed", exc_info=True)
+
+
 @login_required
 @require_POST
 @ratelimit(key="user", rate="20/m", method="POST", block=True)
@@ -256,16 +348,20 @@ def chat(request):
         return JsonResponse({"reply": "...", "in_coma": True})
     message = _json(request).get("message", "")
     reply = llm.speak(c, message)
-    # Background-style memory extraction (still synchronous; cheap if no
-    # API key, async upgrade is a Phase 4 concern).
-    facts = llm.extract_memories(c, message)
-    written = llm.upsert_memories(c, facts) if facts else 0
-    # Trait nudge: every chat counts as a curiosity-positive interaction.
+
+    # Memory extraction off the request path so the user gets the
+    # reply immediately. The next /me/ poll surfaces any new facts.
+    threading.Thread(
+        target=_extract_in_background,
+        args=(c.pk, message),
+        daemon=True,
+    ).start()
+
     services._apply_trait_deltas(c, services.ACTION_TRAITS["talk"])
-    services._record(c, "chat", {"facts_learned": written})
+    services._record(c, "chat", {})
     c.touch_interaction()
     c.save(update_fields=["last_interaction_at", "last_seen_at"])
-    return JsonResponse({"reply": reply, "facts_learned": written, "in_coma": False})
+    return JsonResponse({"reply": reply, "in_coma": False})
 
 
 @login_required
@@ -273,18 +369,47 @@ def chat(request):
 def memories(request):
     c = _get_companion_or_404(request.user)
     if c is None: return _err("No companion yet.", "no_companion", 404)
+    page = max(1, int(request.GET.get("page") or 1))
+    page_size = min(50, max(1, int(request.GET.get("page_size") or 20)))
+    qs = c.memories.order_by("-confidence", "-learned_at")
+    total = qs.count()
+    rows = qs[(page - 1) * page_size : page * page_size]
     return JsonResponse({
         "memories": [
-            {"fact_type": m.fact_type, "key": m.key, "value": m.value, "confidence": m.confidence}
-            for m in c.memories.order_by("-confidence", "-learned_at")[:50]
+            {
+                "fact_type": m.fact_type, "key": m.key,
+                "value": m.plain_value, "confidence": m.confidence,
+                "learned_at": m.learned_at.isoformat(),
+            } for m in rows
         ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": page * page_size < total,
+    })
+
+
+# Founder counter is public so the home page can show "X seats left".
+@require_GET
+@ratelimit(key="ip", rate="60/m", method="GET", block=True)
+def founder_status(request):
+    from django.conf import settings as s
+    limit = getattr(s, "FOUNDER_LIMIT", 100)
+    taken = Companion.objects.filter(founder_number__isnull=False).count()
+    return JsonResponse({
+        "founder_limit": limit,
+        "founders_minted": taken,
+        "founders_remaining": max(0, limit - taken),
     })
 
 
 # Public verification -------------------------------------------------
 
 @require_GET
+@ratelimit(key="ip", rate="30/m", method="GET", block=True)
 def verify(request, unique_code: str):
+    """Public endpoint, but rate-limited per IP so attackers cannot
+    enumerate the database by guessing codes."""
     try:
         c = Companion.objects.get(unique_code=unique_code.upper())
     except Companion.DoesNotExist:

@@ -54,6 +54,11 @@ export class Game {
     private destroyed = false;
     private resizeHandler?: () => void;
     private actionTimers: number[] = [];
+    /** Sequential action queue. Prevents two simultaneous goto-targets
+     *  from overwriting each other and lets us preempt with priority. */
+    private actionChain: Promise<void> = Promise.resolve();
+    /** Cursor world position, used by the eye-tracking effect. */
+    private cursor: { x: number; y: number } | null = null;
 
     constructor() {
         this.app = new Application();
@@ -98,6 +103,13 @@ export class Game {
             sick: false,
             inComa: false,
         };
+        // Speed shaped by temperament so a calm pet drifts and a wild
+        // one sprints. The DNA seed already chose temperament.
+        const speedByTemp: Record<string, number> = {
+            calm: 22, lazy: 18, shy: 28,
+            curious: 38, energetic: 50, wild: 55, bold: 42,
+        };
+        const speed = speedByTemp[phenotype.temperament_seed] ?? 35;
         this.blackboard = {
             state: this.bbState,
             bounds: this.computeBounds(layout),
@@ -105,7 +117,7 @@ export class Game {
             particles: this.particles,
             room: this.room,
             target: { x: layout.width / 2, y: layout.floorY + 20, arrivedRadius: 6, arrived: true },
-            speed: 35,                          // px per second
+            speed,
         };
 
         this.tree = this.buildTree();
@@ -142,38 +154,64 @@ export class Game {
 
     /* ------------------------- public commands ------------------------ */
 
-    private waitForArrival(onArrived: () => void): void {
-        if (!this.isReady()) return;
-        const id = window.setInterval(() => {
-            if (this.destroyed) { clearInterval(id); return; }
-            if (this.blackboard.target.arrived) {
-                clearInterval(id);
-                this.actionTimers = this.actionTimers.filter((t) => t !== id);
-                onArrived();
-            }
-        }, 50);
-        this.actionTimers.push(id);
+    private waitForArrival(): Promise<void> {
+        if (!this.isReady()) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const id = window.setInterval(() => {
+                if (this.destroyed) { clearInterval(id); resolve(); return; }
+                if (this.blackboard.target.arrived) {
+                    clearInterval(id);
+                    this.actionTimers = this.actionTimers.filter((t) => t !== id);
+                    resolve();
+                }
+            }, 50);
+            this.actionTimers.push(id);
+        });
     }
 
-    public feed(): void {
-        if (!this.isReady()) return;
-        const layout = this.room.layout;
-        this.blackboard.target = { x: layout.bowlPos.x, y: layout.bowlPos.y + 10, arrivedRadius: 18, arrived: false };
-        this.waitForArrival(() => {
+    private wait(ms: number): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const id = window.setTimeout(resolve, ms);
+            this.actionTimers.push(id as unknown as number);
+        });
+    }
+
+    /**
+     * Queue an action so two clicks in a row do not race for the same
+     * target. Each step runs sequentially. The chain swallows errors
+     * so one broken step does not poison future ones.
+     */
+    private enqueue(step: () => Promise<void>): Promise<void> {
+        const next = this.actionChain.then(() => {
+            if (this.destroyed || !this.isReady()) return;
+            return step().catch((e) => console.warn("action step failed", e));
+        });
+        this.actionChain = next.then(() => undefined, () => undefined);
+        return next;
+    }
+
+    public feed(): Promise<void> {
+        return this.enqueue(async () => {
+            const layout = this.room.layout;
+            this.blackboard.target = { x: layout.bowlPos.x, y: layout.bowlPos.y + 10, arrivedRadius: 18, arrived: false };
+            await this.waitForArrival();
+            if (!this.isReady()) return;
             this.creature.playAction("eat", 2000);
             this.bbState.hunger = Math.min(100, this.bbState.hunger + 25);
             this.particles.emit({
                 x: this.creature.container.x, y: this.creature.container.y - 30,
                 text: "🍞", count: 3, lifeMs: 1200,
             });
+            await this.wait(2000);
         });
     }
 
-    public play(): void {
-        if (!this.isReady()) return;
-        const layout = this.room.layout;
-        this.blackboard.target = { x: layout.toyPos.x, y: layout.toyPos.y + 6, arrivedRadius: 18, arrived: false };
-        this.waitForArrival(() => {
+    public play(): Promise<void> {
+        return this.enqueue(async () => {
+            const layout = this.room.layout;
+            this.blackboard.target = { x: layout.toyPos.x, y: layout.toyPos.y + 6, arrivedRadius: 18, arrived: false };
+            await this.waitForArrival();
+            if (!this.isReady()) return;
             this.creature.playAction("play_with_toy", 2500);
             this.bbState.happiness = Math.min(100, this.bbState.happiness + 25);
             this.bbState.energy = Math.max(0, this.bbState.energy - 10);
@@ -181,14 +219,16 @@ export class Game {
                 x: this.creature.container.x, y: this.creature.container.y - 30,
                 text: "❤️", count: 4, lifeMs: 1300,
             });
+            await this.wait(2500);
         });
     }
 
-    public sleep(): void {
-        if (!this.isReady()) return;
-        const layout = this.room.layout;
-        this.blackboard.target = { x: layout.bedPos.x, y: layout.bedPos.y + 8, arrivedRadius: 22, arrived: false };
-        this.waitForArrival(() => {
+    public sleep(): Promise<void> {
+        return this.enqueue(async () => {
+            const layout = this.room.layout;
+            this.blackboard.target = { x: layout.bedPos.x, y: layout.bedPos.y + 8, arrivedRadius: 22, arrived: false };
+            await this.waitForArrival();
+            if (!this.isReady()) return;
             this.creature.playAction("sleep", 4000);
             this.bbState.energy = Math.min(100, this.bbState.energy + 35);
             const id = window.setInterval(() => {
@@ -200,7 +240,8 @@ export class Game {
                 });
             }, 600);
             this.actionTimers.push(id);
-            setTimeout(() => clearInterval(id), 4000);
+            await this.wait(4000);
+            clearInterval(id);
         });
     }
 
@@ -278,6 +319,10 @@ export class Game {
         })();
         this.room.update(deltaMs, isNight);
         this.tree.tick(deltaMs, this.blackboard);
+        if (this.cursor) {
+            const local = this.creature.container.toLocal({ x: this.cursor.x, y: this.cursor.y });
+            this.creature.lookAt(local.x, local.y);
+        }
         this.creature.update(deltaMs, this.bbState);
         this.particles.update(deltaMs);
     }
@@ -410,25 +455,40 @@ export class Game {
         this.creature.container.eventMode = "static";
         this.creature.container.cursor = "pointer";
 
+        // Disable native gestures (context menu, scroll) on the canvas
+        // so touch holds reliably register as long-press.
+        this.app.canvas.style.touchAction = "none";
+
+        // Track cursor for the eye-tracking effect.
+        this.app.stage.on("globalpointermove", (e) => {
+            this.cursor = { x: e.global.x, y: e.global.y };
+        });
+
         let pressTimer: number | undefined;
+        let didLong = false;
         this.creature.container.on("pointerdown", () => {
+            didLong = false;
             pressTimer = window.setTimeout(() => {
-                // Long-press = pet
                 this.pet();
                 pressTimer = undefined;
+                didLong = true;
             }, 320);
         });
         const cancel = () => {
             if (pressTimer !== undefined) {
                 clearTimeout(pressTimer);
                 pressTimer = undefined;
-                // Short tap = nuzzle
-                this.creature.playAction("look_at_camera", 800);
-                this.bbState.happiness = Math.min(100, this.bbState.happiness + 1);
-                this.particles.emit({
-                    x: this.creature.container.x, y: this.creature.container.y - 50,
-                    text: "💕", count: 1, lifeMs: 1000,
-                });
+                if (!didLong) {
+                    // Short tap = nuzzle
+                    this.creature.playAction("look_at_camera", 800);
+                    if (this.bbState) {
+                        this.bbState.happiness = Math.min(100, this.bbState.happiness + 1);
+                    }
+                    this.particles.emit({
+                        x: this.creature.container.x, y: this.creature.container.y - 50,
+                        text: "💕", count: 1, lifeMs: 1000,
+                    });
+                }
             }
         };
         this.creature.container.on("pointerup", cancel);

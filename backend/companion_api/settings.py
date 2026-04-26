@@ -84,6 +84,18 @@ DATABASES = {
     )
 }
 
+# `select_for_update` is a no-op on SQLite. Loud warning so production
+# never silently runs without row locks.
+if not DEBUG and DATABASES["default"]["ENGINE"].endswith("sqlite3"):
+    import warnings
+    warnings.warn(
+        "Production is running on SQLite. select_for_update is a no-op "
+        "and concurrent writes can race. Set DATABASE_URL to a Postgres "
+        "instance.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
@@ -114,8 +126,13 @@ CORS_ALLOWED_ORIGINS = config(
     cast=Csv(),
 )
 CORS_ALLOW_CREDENTIALS = True
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+
+# In production where the SPA is on app.example.com and the API on
+# api.example.com, cookies must be SameSite=None + Secure to ride
+# along with cross-origin XHR. In dev we keep Lax (no HTTPS).
+COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+SESSION_COOKIE_SAMESITE = COOKIE_SAMESITE
+CSRF_COOKIE_SAMESITE = COOKIE_SAMESITE
 
 CACHES = {
     "default": {
@@ -129,6 +146,16 @@ RATELIMIT_USE_CACHE = "default"
 ANTHROPIC_API_KEY = config("ANTHROPIC_API_KEY", default="")
 
 FOUNDER_LIMIT = 100
+
+# Disable per-row encryption (e.g. for tests). Default off so prod
+# encrypts by default.
+MEMORY_ENCRYPTION_DISABLED = config("MEMORY_ENCRYPTION_DISABLED", default=False, cast=bool)
+
+# Analytics: optional Plausible domain. Frontend reads this through
+# /api/health/ in a future patch; for now, the key is present so the
+# build is configurable without code changes.
+PLAUSIBLE_DOMAIN = config("PLAUSIBLE_DOMAIN", default="")
+SENTRY_DSN = config("SENTRY_DSN", default="")
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
