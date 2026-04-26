@@ -80,7 +80,7 @@ export function Passport({ cert, verifyUrl }: Props) {
                         <Field label="Date of Birth"  value={formatBirthDate(birth)} mono />
                         <Field label="Nationality"    value="SYNTHETIC INTELLIGENCE" />
                         <Field label="Guardian"       value={`@${cert.parent_username}`} />
-                        <Field label="Talent"         value={cert.phenotype.talent.toUpperCase()} />
+                        <Field label="Sworn By"       value={cert.pledge_signature || "—"} />
                     </dl>
                 </div>
 

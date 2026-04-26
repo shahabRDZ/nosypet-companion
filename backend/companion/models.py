@@ -50,6 +50,11 @@ class Companion(models.Model):
     archetype_locked = models.CharField(max_length=24, blank=True, default="")
     archetype_locked_at = models.DateTimeField(null=True, blank=True)
 
+    # Guardianship pledge: signed once, immutable, printed on the AI
+    # Passport. The signature is the guardian's chosen full name.
+    pledge_signature = models.CharField(max_length=80, blank=True, default="")
+    pledge_signed_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         indexes = [
             models.Index(fields=["founder_number"]),
@@ -58,9 +63,11 @@ class Companion(models.Model):
 
     @classmethod
     @transaction.atomic
-    def hatch(cls, *, owner, name: str) -> "Companion":
+    def hatch(cls, *, owner, name: str, pledge_signature: str = "") -> "Companion":
         """Create a companion with a fresh seed and atomically claim a
-        founder slot if any are left."""
+        founder slot if any are left. The pledge_signature, if given,
+        is stamped onto the companion at birth and becomes part of the
+        AI Passport."""
         for _ in range(5):
             seed = dna.new_seed()
             if not cls.objects.filter(dna_seed=seed).exists():
@@ -70,7 +77,7 @@ class Companion(models.Model):
 
         founder_no = cls._claim_founder_slot()
 
-        return cls.objects.create(
+        kwargs = dict(
             owner=owner,
             name=name,
             dna_seed=seed,
@@ -78,6 +85,10 @@ class Companion(models.Model):
             parent_username_at_birth=owner.username,
             founder_number=founder_no,
         )
+        if pledge_signature:
+            kwargs["pledge_signature"] = pledge_signature[:80]
+            kwargs["pledge_signed_at"] = timezone.now()
+        return cls.objects.create(**kwargs)
 
     @classmethod
     def _claim_founder_slot(cls) -> int | None:

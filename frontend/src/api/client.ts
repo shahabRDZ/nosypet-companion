@@ -82,7 +82,7 @@ export const api = {
         request<{ authenticated: false }>("/auth/logout/", { method: "POST" }),
 
     // Companion
-    hatch: (body: { name: string }) =>
+    hatch: (body: { name: string; pledge_signature: string }) =>
         request<Companion>("/companion/hatch/", { method: "POST", body: JSON.stringify(body) }),
     me: () => request<Companion>("/companion/me/"),
     certificate: () => request<Certificate>("/companion/certificate/"),
