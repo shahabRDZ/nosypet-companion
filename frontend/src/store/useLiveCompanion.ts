@@ -48,6 +48,9 @@ export interface LiveCompanion {
     wash: () => Promise<void>;
     heal: (kind?: "medicine" | "soup" | "vet") => Promise<void>;
     revive: () => Promise<void>;
+    toilet: () => Promise<void>;
+    wake: () => Promise<void>;
+    scold: () => Promise<void>;
     chat: (message: string) => Promise<{ reply: string; in_coma: boolean }>;
 }
 
@@ -109,13 +112,16 @@ export function useLiveCompanion(): LiveCompanion {
         status,
         error,
         refresh,
-        feed:  wrap(api.feed),
-        play:  wrap(api.play),
-        sleep: wrap(api.sleep),
-        pet:   wrap(api.pet),
-        wash:  wrap(api.wash),
-        heal:  wrap(api.heal),
+        feed:   wrap(api.feed),
+        play:   wrap(api.play),
+        sleep:  wrap(api.sleep),
+        pet:    wrap(api.pet),
+        wash:   wrap(api.wash),
+        heal:   wrap(api.heal),
         revive: wrap(api.revive),
+        toilet: wrap(api.toilet),
+        wake:   wrap(api.wake),
+        scold:  wrap(api.scold),
         chat,
     };
 }

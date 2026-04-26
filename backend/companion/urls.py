@@ -31,6 +31,9 @@ urlpatterns = [
     path("companion/wash/",   api.wash,   name="wash"),
     path("companion/heal/",   api.heal,   name="heal"),
     path("companion/revive/", api.revive, name="revive"),
+    path("companion/toilet/", api.toilet, name="toilet"),
+    path("companion/wake/",   api.wake,   name="wake"),
+    path("companion/scold/",  api.scold,  name="scold"),
 
     # AI Mind
     path("companion/chat/",   api.chat,   name="chat"),

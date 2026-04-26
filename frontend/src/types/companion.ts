@@ -35,6 +35,8 @@ export interface Companion {
     energy?: number;
     hygiene?: number;
     immunity?: number;
+    bladder?: number;
+    is_sleeping?: boolean;
     is_sick?: boolean;
     is_alive?: boolean;
     overall?: number;

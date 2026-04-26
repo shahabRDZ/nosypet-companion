@@ -779,6 +779,61 @@ export class Creature {
                 break;
             }
 
+            case "beg": {
+                bodyY = 8;
+                leftThighRot = -0.7; rightThighRot = -0.7;
+                leftShinRot = 1.2; rightShinRot = 1.2;
+                leftShoulderRot = -1.7 + Math.sin(tSec * 6) * 0.15;
+                rightShoulderRot = 1.7 + Math.sin(tSec * 6 + Math.PI) * 0.15;
+                leftElbow = 0.4; rightElbow = 0.4;
+                headRot = -0.05;
+                tailRot = Math.sin(tSec * 8) * 0.4;
+                break;
+            }
+
+            case "potty_dance": {
+                const phase = tSec * 7;
+                bodyY = Math.abs(Math.sin(phase)) * -2;
+                bodyRot = Math.sin(phase) * 0.06;
+                leftThighRot = 0.35;
+                rightThighRot = -0.35;
+                leftShinRot = 0.4;
+                rightShinRot = 0.4;
+                leftShoulderRot = -0.5 + Math.sin(phase) * 0.2;
+                rightShoulderRot = 0.5 - Math.sin(phase) * 0.2;
+                leftElbow = 0.9; rightElbow = 0.9;
+                headRot = Math.sin(phase) * 0.15;
+                tailRot = Math.sin(phase * 2) * 0.4;
+                break;
+            }
+
+            case "cry": {
+                bodyY = 5 + Math.sin(tSec * 6) * 0.6;
+                bodyRot = 0.04;
+                headRot = 0.18;
+                leftShoulderRot = -0.3;
+                rightShoulderRot = 0.3;
+                leftElbow = 0.6; rightElbow = 0.6;
+                tailRot = -0.2;
+                const ey = -HEAD_R * 0.06;
+                this.mouth.clear();
+                this.mouth.moveTo(-5, ey + 19)
+                    .quadraticCurveTo(0, ey + 14 + Math.sin(tSec * 4) * 0.5, 5, ey + 19)
+                    .stroke({ color: 0x1a1230, width: 1.8, cap: "round" });
+                break;
+            }
+
+            case "flinch": {
+                const k = Math.max(0, 1 - tSec * 0.6);
+                bodyY = 4 - k * 4;
+                bodyRot = -0.1 * k;
+                headRot = -0.25 * k;
+                leftEarBase = -0.4 * k;
+                rightEarBase = -0.4 * k;
+                tailRot = -0.3 * k;
+                break;
+            }
+
             case "idle":
             default:
                 break;

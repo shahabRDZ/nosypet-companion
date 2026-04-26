@@ -33,6 +33,16 @@ class Companion(models.Model):
     hygiene = models.PositiveSmallIntegerField(default=85)
     immunity = models.PositiveSmallIntegerField(default=70)
 
+    # Bladder pressure: 0 (empty) -> 100 (accident imminent).
+    # Unlike other stats this *fills* over time and gets drained by
+    # taking the companion to the toilet.
+    bladder = models.PositiveSmallIntegerField(default=20)
+
+    # Persistent sleep state. Sleeping companions regenerate energy
+    # faster and ignore most stimuli until the owner taps them awake.
+    is_sleeping = models.BooleanField(default=False)
+    sleep_started_at = models.DateTimeField(null=True, blank=True)
+
     # Sickness: a current disease, if any. We use a CharField + start
     # time rather than a separate table to keep queries simple. The
     # disease catalogue lives in `sickness.py`.

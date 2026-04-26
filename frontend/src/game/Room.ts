@@ -33,6 +33,10 @@ export class Room {
     private cloudOffsets: number[] = [];
     private lightShaft: Graphics;
     private vignette: Graphics;
+    private nightstand: Graphics;
+    private dresser: Graphics;
+    private wallArt: Graphics;
+    private plant: Graphics;
 
     constructor(public readonly layout: RoomLayout) {
         this.container = new Container();
@@ -54,12 +58,16 @@ export class Room {
         this.toy = new Graphics();
         this.lightShaft = new Graphics();
         this.vignette = new Graphics();
+        this.nightstand = new Graphics();
+        this.dresser = new Graphics();
+        this.wallArt = new Graphics();
+        this.plant = new Graphics();
 
         this.bgLayer.addChild(
-            this.wall, this.window, this.sun, this.moon, this.wainscot,
+            this.wall, this.window, this.sun, this.moon, this.wallArt, this.wainscot,
             this.floor, this.rug, this.lightShaft,
         );
-        this.fgLayer.addChild(this.bowl, this.bed, this.toy);
+        this.fgLayer.addChild(this.dresser, this.bed, this.bowl, this.nightstand, this.plant, this.toy);
         this.fxLayer.addChild(this.vignette);
         this.vignette.zIndex = 50;
 
@@ -161,25 +169,133 @@ export class Room {
         this.rug.roundRect(rugX + 8, rugY + 8, rugW - 16, rugH - 16, 6)
             .stroke({ color: 0xfae3c1, width: 2 });
 
-        // Food bowl
+        // Food bowl with placemat
         this.bowl.clear();
-        this.bowl.ellipse(bowlPos.x, bowlPos.y + 4, 22, 8).fill({ color: 0x000000, alpha: 0.18 });
-        this.bowl.ellipse(bowlPos.x, bowlPos.y, 22, 12).fill(0xc44a3b);
-        this.bowl.ellipse(bowlPos.x, bowlPos.y - 2, 18, 9).fill(0x8c2e22);
-        this.bowl.ellipse(bowlPos.x - 5, bowlPos.y - 2, 4, 3).fill(0xffd84a);
-        this.bowl.ellipse(bowlPos.x + 4, bowlPos.y - 1, 3, 2).fill(0x8b5e3c);
+        const bw = 32, bh = 14;
+        // Placemat
+        this.bowl.roundRect(bowlPos.x - 38, bowlPos.y - 4, 76, 22, 4)
+            .fill(0xfae3c1);
+        this.bowl.roundRect(bowlPos.x - 38, bowlPos.y - 4, 76, 22, 4)
+            .stroke({ color: 0xc89a6e, width: 1.5 });
+        // Bowl
+        this.bowl.ellipse(bowlPos.x, bowlPos.y + 8, bw * 0.85, 6).fill({ color: 0x000000, alpha: 0.2 });
+        this.bowl.ellipse(bowlPos.x, bowlPos.y, bw, bh).fill(0xc44a3b);
+        this.bowl.ellipse(bowlPos.x, bowlPos.y - 3, bw * 0.78, bh * 0.7).fill(0x6e2818);
+        // Kibble
+        this.bowl.ellipse(bowlPos.x - 7, bowlPos.y - 3, 4, 3).fill(0xffd84a);
+        this.bowl.ellipse(bowlPos.x + 6, bowlPos.y - 2, 4, 3).fill(0xb87838);
+        this.bowl.ellipse(bowlPos.x, bowlPos.y - 5, 4, 3).fill(0xd8a058);
 
-        // Bed (round pillow)
+        // Bed: a proper rectangular dog bed with frame and cushion.
         this.bed.clear();
-        this.bed.ellipse(bedPos.x, bedPos.y + 6, 50, 12).fill({ color: 0x000000, alpha: 0.18 });
-        this.bed.ellipse(bedPos.x, bedPos.y, 50, 22).fill(0xa78bfa);
-        this.bed.ellipse(bedPos.x, bedPos.y - 4, 38, 14).fill(0xc4b5fd);
+        const bedW = 110, bedH = 36;
+        const bx = bedPos.x - bedW / 2, by = bedPos.y - bedH / 2;
+        // Shadow
+        this.bed.ellipse(bedPos.x, by + bedH + 6, bedW * 0.5, 6)
+            .fill({ color: 0x000000, alpha: 0.22 });
+        // Wooden base
+        this.bed.roundRect(bx, by + bedH * 0.55, bedW, bedH * 0.5, 4).fill(0x8c5a35);
+        this.bed.roundRect(bx, by + bedH * 0.55, bedW, bedH * 0.5, 4)
+            .stroke({ color: 0x4a2818, width: 1.5 });
+        // Cushion
+        this.bed.roundRect(bx + 6, by, bedW - 12, bedH * 0.7, 8).fill(0xa78bfa);
+        this.bed.roundRect(bx + 6, by, bedW - 12, bedH * 0.7, 8)
+            .stroke({ color: 0x000000, width: 1, alpha: 0.18 });
+        // Pillow
+        this.bed.roundRect(bx + 14, by + 4, 26, bedH * 0.45, 4).fill(0xfff5d6);
+        this.bed.roundRect(bx + 14, by + 4, 26, bedH * 0.45, 4)
+            .stroke({ color: 0xc89a6e, width: 0.8 });
+        // Stitch detail
+        for (let i = 0; i < 3; i++) {
+            this.bed.circle(bx + 18 + i * 6, by + 8, 0.6)
+                .fill({ color: 0x000000, alpha: 0.4 });
+        }
 
         // Toy: a small ball
         this.toy.clear();
-        this.toy.circle(toyPos.x, toyPos.y + 4, 6).fill({ color: 0x000000, alpha: 0.2 });
-        this.toy.circle(toyPos.x, toyPos.y, 8).fill(0xff7eb3);
-        this.toy.circle(toyPos.x - 2, toyPos.y - 2, 2).fill({ color: 0xffffff, alpha: 0.6 });
+        this.toy.circle(toyPos.x, toyPos.y + 5, 8).fill({ color: 0x000000, alpha: 0.22 });
+        this.toy.circle(toyPos.x, toyPos.y, 10).fill(0xff7eb3);
+        this.toy.circle(toyPos.x - 3, toyPos.y - 3, 3).fill({ color: 0xffffff, alpha: 0.6 });
+        this.toy.moveTo(toyPos.x - 7, toyPos.y).quadraticCurveTo(toyPos.x, toyPos.y - 3, toyPos.x + 7, toyPos.y)
+            .stroke({ color: 0xc44a3b, width: 1, alpha: 0.6 });
+
+        // Nightstand next to the bed (right side)
+        const nsX = bx + bedW + 10;
+        const nsY = floorY - 32;
+        this.nightstand.clear();
+        // Shadow
+        this.nightstand.ellipse(nsX + 14, nsY + 36, 20, 4).fill({ color: 0x000000, alpha: 0.2 });
+        // Body
+        this.nightstand.roundRect(nsX, nsY, 28, 30, 2).fill(0x8c5a35);
+        this.nightstand.roundRect(nsX, nsY, 28, 30, 2).stroke({ color: 0x4a2818, width: 1.2 });
+        // Drawer line
+        this.nightstand.rect(nsX + 2, nsY + 14, 24, 1).fill({ color: 0x000000, alpha: 0.3 });
+        this.nightstand.circle(nsX + 14, nsY + 22, 1.2).fill(0xb89858);
+        // Legs
+        this.nightstand.rect(nsX + 1, nsY + 30, 3, 6).fill(0x6e4a30);
+        this.nightstand.rect(nsX + 24, nsY + 30, 3, 6).fill(0x6e4a30);
+        // Lamp on top
+        this.nightstand.rect(nsX + 13, nsY - 14, 2, 14).fill(0x4a2818);
+        this.nightstand.poly([nsX + 6, nsY - 14, nsX + 22, nsY - 14, nsX + 18, nsY - 26, nsX + 10, nsY - 26])
+            .fill(0xfff5a0);
+        this.nightstand.ellipse(nsX + 14, nsY, 8, 2).fill(0x4a2818);
+        // Tiny clock on top
+        this.nightstand.roundRect(nsX + 18, nsY - 6, 9, 6, 1).fill(0x222244);
+        this.nightstand.rect(nsX + 19, nsY - 5, 7, 4).fill(0x6dd3ff);
+
+        // Dresser on the left side of the room
+        const drX = width * 0.05;
+        const drY = floorY - 50;
+        const drW = 60;
+        const drH = 50;
+        this.dresser.clear();
+        this.dresser.ellipse(drX + drW / 2, drY + drH + 6, drW * 0.45, 6)
+            .fill({ color: 0x000000, alpha: 0.22 });
+        this.dresser.roundRect(drX, drY, drW, drH, 3).fill(0x8c5a35);
+        this.dresser.roundRect(drX, drY, drW, drH, 3).stroke({ color: 0x4a2818, width: 1.5 });
+        // 3 drawers
+        for (let i = 0; i < 3; i++) {
+            this.dresser.roundRect(drX + 4, drY + 4 + i * 14, drW - 8, 12, 1).fill(0xa66e42);
+            this.dresser.roundRect(drX + 4, drY + 4 + i * 14, drW - 8, 12, 1)
+                .stroke({ color: 0x4a2818, width: 0.8 });
+            this.dresser.circle(drX + 14, drY + 10 + i * 14, 1.4).fill(0xb89858);
+            this.dresser.circle(drX + drW - 14, drY + 10 + i * 14, 1.4).fill(0xb89858);
+        }
+        // Picture frame on the dresser
+        this.dresser.rect(drX + drW * 0.3, drY - 18, 16, 18).fill(0x6e4a30);
+        this.dresser.rect(drX + drW * 0.3 + 2, drY - 16, 12, 14).fill(0xfff5e0);
+        this.dresser.circle(drX + drW * 0.3 + 8, drY - 11, 3).fill(0xff7eb3);
+
+        // Wall art above the bed
+        const waX = bedPos.x - 50;
+        const waY = floorY * 0.25;
+        this.wallArt.clear();
+        this.wallArt.rect(waX, waY, 100, 50).fill(0x4a2818);
+        this.wallArt.rect(waX + 4, waY + 4, 92, 42).fill(0xfff5e0);
+        // Subject — soft pastel landscape
+        this.wallArt.rect(waX + 4, waY + 4, 92, 26).fill(0xb8e6ff);
+        this.wallArt.rect(waX + 4, waY + 30, 92, 16).fill(0x68a058);
+        this.wallArt.circle(waX + 70, waY + 16, 6).fill(0xffd84a);
+
+        // Houseplant in the front corner
+        const plX = width * 0.92, plY = floorY + (height - floorY) * 0.5;
+        this.plant.clear();
+        // Pot
+        this.plant.poly([plX - 14, plY + 26, plX + 14, plY + 26, plX + 11, plY + 8, plX - 11, plY + 8])
+            .fill(0xc44a3b);
+        this.plant.poly([plX - 14, plY + 26, plX + 14, plY + 26, plX + 11, plY + 8, plX - 11, plY + 8])
+            .stroke({ color: 0x6e2818, width: 1 });
+        this.plant.ellipse(plX, plY + 8, 11, 3).fill(0x4a1810);
+        // Leaves
+        for (let i = -2; i <= 2; i++) {
+            const angle = -Math.PI / 2 + i * 0.45;
+            const len = 22 + Math.abs(i) * 4;
+            const ex = plX + Math.cos(angle) * len * 0.25;
+            const ey = plY + 4 + Math.sin(angle) * len * 0.5;
+            this.plant.ellipse(ex, ey - len * 0.4, 7, len * 0.5).fill(0x4a8038);
+            this.plant.ellipse(ex, ey - len * 0.4, 7, len * 0.5)
+                .stroke({ color: 0x2a5018, width: 0.8 });
+        }
 
         // Light shaft from the window onto the floor.
         this.lightShaft.clear();
