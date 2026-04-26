@@ -61,6 +61,7 @@ export interface MemoryEntry {
 export interface Certificate {
     name: string;
     unique_code: string;
+    designation: string;
     species: string;
     birth_at: string;
     parent_username: string;

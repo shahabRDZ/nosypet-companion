@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ApiError, api } from "../api/client";
+import { sound } from "../audio/Sounds";
 import { CompanionPortrait } from "../components/CompanionPortrait";
 import { useSession } from "../store/session";
 
@@ -19,9 +20,10 @@ export function HatchingPage() {
         setError(null);
         setBusy(true);
         setStage("summoning");
+        sound.unlock();
+        sound.hatch();
         try {
             await api.csrf();
-            // Brief dramatic pause for the animation to play.
             const [created] = await Promise.all([
                 api.hatch({ name }),
                 new Promise((r) => setTimeout(r, 1800)),

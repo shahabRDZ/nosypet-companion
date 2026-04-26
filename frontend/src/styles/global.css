@@ -333,8 +333,49 @@ input, textarea {
     transition: width 0.2s;
 }
 
+/* Install banner */
+.install-banner {
+    background: rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--card-border);
+    padding: 0.6rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+}
+.install-banner .btn { padding: 0.35rem 0.9rem; font-size: 0.85rem; }
+.install-banner .btn-ghost { padding: 0.2rem 0.55rem; font-size: 1.1rem; line-height: 1; }
+
+/* Onboarding dots */
+.onb-dots {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+.onb-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    transition: background 0.2s, transform 0.2s;
+}
+.onb-dots span.on { background: var(--primary); transform: scale(1.2); }
+
+.link-btn {
+    background: none;
+    border: 0;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
 @media (max-width: 600px) {
     .topbar { padding: 0.8rem 1rem; }
     .game-controls { grid-template-columns: repeat(3, 1fr); }
     .cert-grid { grid-template-columns: 1fr; }
+    .install-banner { font-size: 0.82rem; }
 }

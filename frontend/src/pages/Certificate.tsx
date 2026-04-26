@@ -3,26 +3,29 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
-import { CompanionPortrait } from "../components/CompanionPortrait";
-import { Fingerprint } from "../components/Fingerprint";
+import { Passport } from "../components/Passport";
 import type { Certificate } from "../types/companion";
 
 export function CertificatePage() {
-    const certRef = useRef<HTMLDivElement | null>(null);
+    const passportRef = useRef<HTMLDivElement | null>(null);
     const [cert, setCert] = useState<Certificate | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         api.certificate()
             .then(setCert)
-            .catch(() => setError("Could not load certificate."));
+            .catch(() => setError("Could not load passport."));
     }, []);
 
     async function downloadPng() {
-        if (!certRef.current || !cert) return;
-        const dataUrl = await toPng(certRef.current, { pixelRatio: 2, cacheBust: true });
+        if (!passportRef.current || !cert) return;
+        const dataUrl = await toPng(passportRef.current, {
+            pixelRatio: 2,
+            cacheBust: true,
+            backgroundColor: "#080418",
+        });
         const link = document.createElement("a");
-        link.download = `nosypet-${cert.unique_code}.png`;
+        link.download = `nosypet-passport-${cert.unique_code}.png`;
         link.href = dataUrl;
         link.click();
     }
@@ -33,65 +36,31 @@ export function CertificatePage() {
         if (navigator.share) {
             try {
                 await navigator.share({
-                    title: `${cert.name} - NosyPet companion`,
-                    text: `Meet ${cert.name}, my AI companion #${cert.unique_code}.`,
+                    title: `${cert.name} · AI Passport`,
+                    text: `Meet ${cert.name}, an AI companion. Verify here:`,
                     url,
                 });
-            } catch {
-                // user cancelled
-            }
+            } catch { /* user cancelled */ }
         } else {
             await navigator.clipboard.writeText(url);
-            alert("Link copied to clipboard.");
+            alert("Verify link copied to clipboard.");
         }
     }
 
     if (error) return <main className="shell"><p>{error}</p></main>;
-    if (!cert) return <main className="shell"><p className="muted">Loading...</p></main>;
+    if (!cert) return <main className="shell"><p className="muted">Loading passport...</p></main>;
 
-    const birth = new Date(cert.birth_at);
+    const verifyUrl = `${window.location.origin}/verify/${cert.unique_code}`;
 
     return (
         <main className="shell">
-            <div ref={certRef} className="certificate" style={{ maxWidth: 520, margin: "0 auto" }}>
-                {cert.is_founder && cert.founder_number !== null && (
-                    <div className="founder-stamp">FOUNDER #{cert.founder_number}</div>
-                )}
-                <h2>Birth Certificate</h2>
-                <p className="center" style={{ color: "#8a6234", letterSpacing: 2 }}>NOSYPET</p>
-
-                <div className="cert-portrait">
-                    <CompanionPortrait phenotype={cert.phenotype} size={140} />
-                </div>
-
-                <h3 className="center" style={{ marginTop: "1rem", color: "#2a1f4a", fontFamily: "Georgia, serif" }}>
-                    {cert.name}
-                </h3>
-                <p className="center" style={{ color: "#8a6234", letterSpacing: 1, fontWeight: 600 }}>
-                    {cert.unique_code}
-                </p>
-
-                <dl className="cert-grid">
-                    <dt>Species</dt><dd>{cert.species}</dd>
-                    <dt>Born</dt><dd>{birth.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</dd>
-                    <dt>Adopted by</dt><dd>@{cert.parent_username}</dd>
-                    <dt>Body</dt><dd>{cert.phenotype.body_color_name} {cert.phenotype.pattern}</dd>
-                    <dt>Eyes</dt><dd>{cert.phenotype.eye_color_name}</dd>
-                    <dt>Talent</dt><dd>{cert.phenotype.talent}</dd>
-                </dl>
-
-                <div className="cert-fingerprint">
-                    <Fingerprint phenotype={cert.phenotype} />
-                </div>
-
-                <p className="center" style={{ fontSize: "0.7rem", color: "#8a6234" }}>
-                    Authenticity verifiable at /verify/{cert.unique_code}
-                </p>
+            <div ref={passportRef} className="passport-wrap">
+                <Passport cert={cert} verifyUrl={verifyUrl} />
             </div>
 
             <div className="row-center" style={{ marginTop: "1.5rem" }}>
-                <button className="btn" onClick={downloadPng}>Download PNG</button>
-                <button className="btn btn-ghost" onClick={shareLink}>Share</button>
+                <button className="btn" onClick={downloadPng}>Download passport</button>
+                <button className="btn btn-ghost" onClick={shareLink}>Share verify link</button>
                 <Link to="/app/play" className="btn btn-ghost">Enter the room</Link>
             </div>
         </main>

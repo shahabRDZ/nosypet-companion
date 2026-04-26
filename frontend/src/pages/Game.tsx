@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { sound } from "../audio/Sounds";
 import { ChatBox } from "../components/ChatBox";
 import { ComaOverlay } from "../components/ComaOverlay";
+import { Onboarding } from "../components/Onboarding";
 import { TraitPanel } from "../components/TraitPanel";
 import { Game } from "../game/Game";
 import { useLiveCompanion } from "../store/useLiveCompanion";
@@ -99,12 +101,12 @@ export function GamePage() {
             </div>
 
             <div className="game-controls">
-                <ActionButton emoji="🍔" label="Feed"  onClick={() => live.feed()} />
-                <ActionButton emoji="🎾" label="Play"  onClick={() => live.play()} />
-                <ActionButton emoji="💤" label="Sleep" onClick={() => live.sleep()} />
-                <ActionButton emoji="🤍" label="Pet"   onClick={() => live.pet()} />
-                <ActionButton emoji="🛁" label="Wash"  onClick={() => live.wash()} />
-                <ActionButton emoji="✨" label="Heal"  onClick={() => live.heal()} disabled={!c.is_sick && !c.is_in_coma} />
+                <ActionButton emoji="🍔" label="Feed"  onClick={() => { sound.unlock(); sound.eat(); live.feed(); }} />
+                <ActionButton emoji="🎾" label="Play"  onClick={() => { sound.unlock(); sound.play(); live.play(); }} />
+                <ActionButton emoji="💤" label="Sleep" onClick={() => { sound.unlock(); sound.sleep(); live.sleep(); }} />
+                <ActionButton emoji="🤍" label="Pet"   onClick={() => { sound.unlock(); sound.pet(); live.pet(); }} />
+                <ActionButton emoji="🛁" label="Wash"  onClick={() => { sound.unlock(); sound.nuzzle(); live.wash(); }} />
+                <ActionButton emoji="✨" label="Heal"  onClick={() => { sound.unlock(); sound.heal(); live.heal(); }} disabled={!c.is_sick && !c.is_in_coma} />
             </div>
 
             <div style={{ marginTop: "1.4rem" }}>
@@ -139,6 +141,8 @@ export function GamePage() {
                     onClose={() => setArchetypeRevealed(false)}
                 />
             )}
+
+            {!c.is_in_coma && !archetypeRevealed && <Onboarding />}
         </main>
     );
 }

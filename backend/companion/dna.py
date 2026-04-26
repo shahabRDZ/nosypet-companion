@@ -104,6 +104,24 @@ def _harmonize(base_hex: str, rng: random.Random) -> str:
     return f"#{r2:02x}{g2:02x}{b2:02x}"
 
 
+def designation(seed: int) -> str:
+    """Futuristic call-sign derived deterministically from the seed.
+
+    Format: <PREFIX>-<3 letters>-<4 digits>-<SUFFIX>, e.g.
+    "AX-VRN-7281-SI". Used on the AI Passport alongside the
+    human-readable name.
+    """
+    rng = random.Random(seed ^ 0xA5A5A5)
+    prefixes = ["AX", "QR", "VX", "ZN", "NX", "OS", "KR", "TI", "EL", "NI"]
+    suffixes = ["SI", "AI", "QC", "ND", "SR", "VC"]
+    consonants = "BCDFGHJKLMNPRSTVWXZ"
+    prefix = rng.choice(prefixes)
+    triad = "".join(rng.choice(consonants) for _ in range(3))
+    digits = f"{rng.randint(1000, 9999)}"
+    suffix = rng.choice(suffixes)
+    return f"{prefix}-{triad}-{digits}-{suffix}"
+
+
 def unique_code(seed: int) -> str:
     """Human-readable identifier derived from the seed.
 

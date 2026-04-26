@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
     Link,
     Navigate,
@@ -8,6 +8,9 @@ import {
     useNavigate,
 } from "react-router-dom";
 
+import { sound } from "./audio/Sounds";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { InstallPrompt } from "./components/InstallPrompt";
 import { AuthPage } from "./pages/Auth";
 import { CertificatePage } from "./pages/Certificate";
 import { GamePage } from "./pages/Game";
@@ -17,18 +20,21 @@ import { useSession } from "./store/session";
 
 export function App() {
     return (
-        <Router>
-            <Bootstrap />
-            <div className="app">
-                <Topbar />
-                <Routes>
-                    <Route path="/" element={<WelcomePage />} />
-                    <Route path="/login" element={<AuthPage mode="login" />} />
-                    <Route path="/signup" element={<AuthPage mode="signup" />} />
-                    <Route path="/app/*" element={<AuthedRoutes />} />
-                </Routes>
-            </div>
-        </Router>
+        <ErrorBoundary>
+            <Router>
+                <Bootstrap />
+                <div className="app">
+                    <Topbar />
+                    <InstallPrompt />
+                    <Routes>
+                        <Route path="/" element={<WelcomePage />} />
+                        <Route path="/login" element={<AuthPage mode="login" />} />
+                        <Route path="/signup" element={<AuthPage mode="signup" />} />
+                        <Route path="/app/*" element={<AuthedRoutes />} />
+                    </Routes>
+                </div>
+            </Router>
+        </ErrorBoundary>
     );
 }
 
@@ -41,10 +47,19 @@ function Bootstrap() {
 function Topbar() {
     const session = useSession((s) => s.session);
     const logout = useSession((s) => s.logout);
+    const [muted, setMuted] = useState(() => sound.isMuted());
     return (
         <header className="topbar">
             <Link to="/" className="brand">🌱 NosyPet</Link>
             <nav style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                <button
+                    className="link-btn"
+                    aria-label={muted ? "Unmute" : "Mute"}
+                    title={muted ? "Sound off" : "Sound on"}
+                    onClick={() => { sound.unlock(); sound.setMuted(!muted); setMuted(!muted); }}
+                >
+                    {muted ? "🔇" : "🔊"}
+                </button>
                 {session?.authenticated ? (
                     <>
                         <Link to="/app">Companion</Link>
