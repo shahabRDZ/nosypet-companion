@@ -1,0 +1,357 @@
+/* ===========================================================
+   AI PASSPORT
+   Cover + interior, glassmorphism + holographic + circuit board.
+   Designed at a fixed reference width so it exports cleanly.
+   =========================================================== */
+
+.passport-wrap {
+    display: flex;
+    justify-content: center;
+}
+
+.passport-shell {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.4rem;
+    width: 100%;
+    max-width: 880px;
+    aspect-ratio: 880 / 600;
+    perspective: 2000px;
+}
+
+@media (max-width: 720px) {
+    .passport-shell { grid-template-columns: 1fr; aspect-ratio: auto; gap: 1rem; }
+}
+
+.passport-cover, .passport-page {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    aspect-ratio: 5 / 7;
+    color: #e9eeff;
+    box-shadow:
+        0 30px 60px rgba(0, 0, 0, 0.55),
+        0 1px 0 rgba(255, 255, 255, 0.06) inset,
+        0 -1px 0 rgba(0, 0, 0, 0.4) inset;
+    isolation: isolate;
+}
+
+/* ---------- COVER ---------- */
+.passport-cover {
+    background:
+        radial-gradient(ellipse at 30% 20%, rgba(94, 168, 255, 0.18), transparent 50%),
+        radial-gradient(ellipse at 70% 90%, rgba(168, 78, 255, 0.16), transparent 50%),
+        linear-gradient(155deg, #0a1230 0%, #0c1a3e 50%, #1b1238 100%);
+    border: 1px solid rgba(160, 200, 255, 0.18);
+    padding: 2rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.cover-emblem {
+    margin: 1.4rem auto 1rem;
+    filter: drop-shadow(0 0 24px rgba(255, 220, 130, 0.35));
+    animation: emblemFloat 6s ease-in-out infinite;
+}
+@keyframes emblemFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+}
+
+.cover-text { margin-top: auto; }
+.cover-issuer {
+    font-size: 0.7rem;
+    letter-spacing: 4px;
+    color: rgba(173, 200, 255, 0.7);
+    margin-bottom: 0.8rem;
+}
+.cover-title {
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 1.6rem;
+    line-height: 1.1;
+    letter-spacing: 0.5px;
+    background: linear-gradient(180deg, #fff5c4, #e0b859 60%, #d8a443);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 0 20px rgba(255, 200, 100, 0.15);
+}
+.cover-title em {
+    font-style: italic;
+    font-size: 1.1rem;
+    background: linear-gradient(180deg, #ffe0a0, #c98c2c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.cover-foot {
+    margin-top: auto;
+    width: 100%;
+}
+.cover-strip {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 0.6rem;
+}
+.cover-strip span {
+    flex: 1;
+    height: 6px;
+    background: linear-gradient(90deg, #5fa8ff, #c084fc, #ffd84a, #5fa8ff);
+    background-size: 800% 100%;
+    border-radius: 1px;
+    animation: shimmer 6s linear infinite;
+    opacity: 0.65;
+}
+.cover-strip span:nth-child(odd) { animation-delay: -2s; }
+@keyframes shimmer {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 200% 0%; }
+}
+.cover-issue {
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    color: rgba(160, 200, 255, 0.55);
+}
+
+/* ---------- INTERIOR PAGE ---------- */
+.passport-page {
+    background:
+        radial-gradient(ellipse at 100% 0%, rgba(168, 78, 255, 0.1), transparent 60%),
+        radial-gradient(ellipse at 0% 100%, rgba(94, 168, 255, 0.1), transparent 60%),
+        linear-gradient(180deg, #f5f1e6 0%, #ece4cf 100%);
+    color: #1c2856;
+    padding: 1.4rem 1.4rem 1.8rem;
+    border: 1px solid rgba(180, 160, 100, 0.35);
+    display: flex;
+    flex-direction: column;
+}
+
+.page-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    letter-spacing: 3px;
+    color: #5a4a18;
+    border-bottom: 1px solid rgba(120, 90, 30, 0.25);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.9rem;
+    z-index: 2;
+}
+
+.page-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 1rem;
+    z-index: 2;
+}
+
+.biometric { text-align: center; }
+.bio-frame {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    border: 2px solid #c4a958;
+    border-radius: 8px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 50%, #fff8e8, #d4cdb6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    box-shadow:
+        0 6px 12px rgba(0, 0, 0, 0.18),
+        0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+}
+.bio-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 30%, rgba(95, 168, 255, 0.4), transparent 60%);
+    pointer-events: none;
+    mix-blend-mode: screen;
+    animation: bioPulse 3s ease-in-out infinite;
+}
+@keyframes bioPulse {
+    0%, 100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+}
+.bio-caption {
+    margin-top: 0.5rem;
+    font-size: 0.55rem;
+    letter-spacing: 2.5px;
+    color: #5a4a18;
+}
+
+.data-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem 1rem;
+}
+.data-field dt {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: #7a6a3a;
+    text-transform: uppercase;
+}
+.data-field dd {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1c2856;
+    margin-top: 1px;
+    line-height: 1.2;
+}
+.data-field dd.mono {
+    font-family: "SF Mono", Menlo, monospace;
+    letter-spacing: 0.5px;
+    font-size: 0.78rem;
+}
+
+.page-bottom {
+    margin-top: auto;
+    padding-top: 1rem;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
+    align-items: end;
+    z-index: 2;
+}
+
+.signature {
+    min-width: 0;
+}
+.sig-label, .chip-label, .qr-label {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: #5a4a18;
+    margin-top: 0.4rem;
+    text-align: center;
+}
+.sig-label { text-align: left; }
+
+.sig-glitch {
+    position: relative;
+    display: inline-block;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1c2856;
+    letter-spacing: 1px;
+    transform: skewX(-6deg);
+}
+.sig-layer { position: absolute; left: 0; top: 0; }
+.sig-glitch .sig-l1 { position: relative; }
+.sig-glitch .sig-l2 { color: #ff3a82; transform: translate(1.5px, -1px); mix-blend-mode: multiply; opacity: 0.45; }
+.sig-glitch .sig-l3 { color: #5fa8ff; transform: translate(-1.5px, 1px); mix-blend-mode: multiply; opacity: 0.45; }
+
+.hologram { text-align: center; }
+.hologram svg {
+    border-radius: 4px;
+    box-shadow: 0 0 12px rgba(126, 240, 200, 0.4);
+    animation: holoShift 4s linear infinite;
+    filter: hue-rotate(0deg);
+}
+@keyframes holoShift {
+    0%, 100% { filter: hue-rotate(0deg) brightness(1); }
+    50%      { filter: hue-rotate(40deg) brightness(1.1); }
+}
+
+.qr { text-align: center; }
+.qr-mount {
+    width: 70px;
+    height: 70px;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid rgba(120, 90, 30, 0.25);
+}
+.qr-mount svg { width: 100%; height: 100%; }
+
+.founder-foil {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: linear-gradient(135deg, #fff5c4 0%, #d8a443 100%);
+    color: #4a2e08;
+    padding: 0.45rem 0.9rem;
+    border-radius: 4px;
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    text-align: center;
+    line-height: 1.4;
+    border: 1px solid #b88c2c;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    z-index: 3;
+}
+.founder-foil strong {
+    display: block;
+    font-size: 1rem;
+    letter-spacing: 0;
+}
+
+/* Microtext rows: ~5px text that becomes legible only when zoomed. */
+.microtext {
+    position: absolute;
+    left: 0;
+    right: 0;
+    font-size: 4.5px;
+    letter-spacing: 0.5px;
+    color: rgba(120, 90, 30, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 2;
+}
+.microtext-top    { top: 28px; }
+.microtext-bottom { bottom: 78px; }
+
+.mrz {
+    position: absolute;
+    left: 1.4rem;
+    right: 1.4rem;
+    bottom: 0.8rem;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.55rem;
+    letter-spacing: 1px;
+    color: #1c2856;
+    white-space: pre-line;
+    line-height: 1.3;
+    z-index: 2;
+}
+
+/* Decorative SVG layers */
+.guilloche {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+.circuit-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Subtle holographic foil gleam over the cover (animated). */
+.passport-cover::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.06) 35%, rgba(255, 220, 200, 0.12) 50%, rgba(255, 255, 255, 0.06) 65%, transparent 100%);
+    background-size: 200% 100%;
+    pointer-events: none;
+    animation: foil 7s linear infinite;
+    mix-blend-mode: overlay;
+    z-index: 2;
+}
+@keyframes foil {
+    0%   { background-position: -50% 0; }
+    100% { background-position: 150% 0; }
+}

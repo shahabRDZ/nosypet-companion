@@ -25,11 +25,12 @@ def serialize_companion(c: Companion) -> dict:
 
 
 def serialize_certificate(c: Companion) -> dict:
-    """A lean payload tuned for the certificate page."""
+    """A lean payload tuned for the AI Passport page."""
     pheno = c.phenotype
     return {
         "name": c.name,
         "unique_code": c.unique_code,
+        "designation": dna.designation(c.dna_seed),
         "species": c.species,
         "birth_at": c.birth_at.isoformat(),
         "parent_username": c.parent_username_at_birth,
