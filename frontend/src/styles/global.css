@@ -1,25 +1,73 @@
 :root {
-    --bg-grad: linear-gradient(135deg, #1a1230 0%, #2a1f4a 50%, #3b2a6e 100%);
-    --card: rgba(255, 255, 255, 0.08);
-    --card-border: rgba(255, 255, 255, 0.16);
-    --text: #fff;
-    --muted: rgba(255, 255, 255, 0.65);
+    /* Brand */
     --primary: #ff7eb3;
     --primary-hover: #ff5a9b;
+    --accent: #c084fc;
     --gold: #ffd84a;
     --good: #6dd3ff;
     --danger: #ef4444;
+
+    /* Surfaces */
+    --bg-deep: #0a0612;
+    --bg-1: #14082a;
+    --bg-2: #1f0c3e;
+    --bg-grad:
+        radial-gradient(ellipse at 20% 0%, rgba(192, 132, 252, 0.18), transparent 60%),
+        radial-gradient(ellipse at 80% 100%, rgba(255, 126, 179, 0.22), transparent 55%),
+        linear-gradient(180deg, #0a0612 0%, #14082a 60%, #1f0c3e 100%);
+    --card: rgba(255, 255, 255, 0.05);
+    --card-border: rgba(255, 255, 255, 0.1);
+    --card-strong: rgba(255, 255, 255, 0.08);
+    --hairline: rgba(255, 255, 255, 0.07);
+
+    /* Text */
+    --text: #f5f0ff;
+    --text-strong: #ffffff;
+    --muted: rgba(245, 240, 255, 0.62);
+    --muted-2: rgba(245, 240, 255, 0.42);
+
+    /* Type */
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-serif: "Instrument Serif", Georgia, serif;
+
+    /* Shadows */
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 40px rgba(0, 0, 0, 0.45);
+    --shadow-glow: 0 0 0 1px rgba(255, 126, 179, 0.25), 0 18px 50px rgba(192, 132, 252, 0.35);
+
+    /* Radii */
+    --r-sm: 10px;
+    --r-md: 14px;
+    --r-lg: 20px;
+    --r-xl: 28px;
+    --r-pill: 999px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
 
 body {
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-family: var(--font-sans);
     background: var(--bg-grad);
+    background-attachment: fixed;
     color: var(--text);
-    line-height: 1.5;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01" on, "cv11" on;
+}
+
+h1, h2, h3, h4 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}
+
+h1 em, h2 em, .serif {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-style: italic;
+    letter-spacing: 0;
 }
 
 a { color: var(--primary); text-decoration: none; }
@@ -64,26 +112,65 @@ input, textarea {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--card-border);
-    background: rgba(0, 0, 0, 0.18);
-    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hairline);
+    background: rgba(10, 6, 18, 0.55);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
-.brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.brand {
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+    color: var(--text-strong);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.brand::before {
+    content: "";
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffd6e8, #ff7eb3 60%, #c084fc);
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.5);
+}
 
 .btn {
-    background: var(--primary);
+    background: linear-gradient(180deg, #ff8fc1 0%, #ff5a9b 100%);
     color: #fff;
-    padding: 0.7rem 1.4rem;
-    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--r-pill);
     font-weight: 600;
-    transition: background 0.15s, transform 0.1s;
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
     border: 0;
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.25) inset,
+        0 -1px 0 rgba(0, 0, 0, 0.2) inset,
+        0 8px 22px rgba(255, 90, 155, 0.35);
 }
-.btn:hover:not(:disabled) { background: var(--primary-hover); }
-.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.3) inset,
+        0 -1px 0 rgba(0, 0, 0, 0.2) inset,
+        0 12px 28px rgba(255, 90, 155, 0.5);
+}
+.btn:active:not(:disabled) { transform: scale(0.98) translateY(0); }
 .btn-ghost {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--card-border);
+    box-shadow: none;
+    color: var(--text);
+}
+.btn-ghost:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: none;
 }
 
 .card {
