@@ -13,9 +13,10 @@
  * - State (hunger/happiness/energy/hygiene) is simulated locally and
  *   periodically synced to the backend in Phase 3.
  */
-import { Application, Container } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 
 import type { Phenotype } from "../types/companion";
+import { Bathroom, type BathroomLayout } from "./Bathroom";
 import {
     Action,
     Cooldown,
@@ -31,6 +32,8 @@ import { ParticleSystem } from "./Particles";
 import { Room, type RoomLayout } from "./Room";
 import type { ActionName, CreatureState, RoomBounds } from "./types";
 
+type SceneKind = "bedroom" | "bathroom";
+
 interface GameBlackboard extends BlackboardLike {
     state: CreatureState;
     bounds: RoomBounds;
@@ -45,6 +48,10 @@ export class Game {
     public readonly app: Application;
     private rootContainer: Container;
     private room!: Room;
+    private bathroom!: Bathroom;
+    private bathroomMounted = false;
+    private currentScene: SceneKind = "bedroom";
+    private fadeOverlay!: Graphics;
     private creature!: Creature;
     private particles!: ParticleSystem;
     private bbState!: CreatureState;
@@ -91,6 +98,19 @@ export class Game {
         this.room.fxLayer.addChild(this.particles.container);
         this.rootContainer.addChild(this.room.container);
         this.rootContainer.addChild(this.creature.container);
+
+        // Bathroom is created on demand at first wash.
+        this.bathroom = new Bathroom(this.computeBathroomLayout(layout));
+
+        // Fade overlay for scene transitions.
+        this.fadeOverlay = new Graphics();
+        this.fadeOverlay.zIndex = 999;
+        this.fadeOverlay.alpha = 0;
+        this.rootContainer.addChild(this.fadeOverlay);
+        this.drawFadeOverlay(layout.width, layout.height);
+
+        // Direct manipulation: tap bowl/bed/toy/tub directly.
+        this.attachSceneTaps();
 
         // Initial state. In Phase 3 these come from the server.
         this.bbState = {
@@ -257,6 +277,85 @@ export class Game {
         this.creature.say("That feels nice", 1800);
     }
 
+    /** Full bath sequence: transition to bathroom, walk to tub, three
+     *  rub cycles with bubble particles, shake-off, transition back. */
+    public wash(): Promise<void> {
+        return this.enqueue(async () => {
+            await this.fadeTo(0.85);
+            this.switchScene("bathroom");
+            // Move creature to entry position in the bathroom.
+            const layout = this.bathroom.layout;
+            this.creature.setPosition(layout.width * 0.18, layout.floorY + 30);
+            this.creature.setFacing(1);
+            this.bathroom.setWaterLevel(0);
+            await this.fadeTo(0);
+
+            // Walk over to the tub.
+            this.blackboard.target = {
+                x: layout.tubPos.x - 30,
+                y: layout.floorY + 30,
+                arrivedRadius: 8,
+                arrived: false,
+            };
+            await this.waitForArrival();
+            if (!this.isReady()) return;
+
+            // Climb in (small jump).
+            await this.fadeJump(layout.tubPos.x, layout.tubPos.y, 320);
+            this.creature.setPosition(layout.tubPos.x, layout.tubPos.y);
+
+            // Fill tub with water.
+            await this.animateValue(0, 1, 1200, (v) => {
+                this.bathroom.setWaterLevel(v);
+                if (Math.random() < 0.3) {
+                    this.particles.emit({
+                        x: layout.tubBounds.x + layout.tubBounds.w * 0.85,
+                        y: layout.tubBounds.y + 6,
+                        text: "💧", count: 1, lifeMs: 800, upward: false, size: 14,
+                    });
+                }
+            });
+
+            // Rub cycle: 3 wash bursts with bubbles.
+            for (let i = 0; i < 3; i++) {
+                this.creature.playAction("wash", 1100);
+                for (let k = 0; k < 4; k++) {
+                    this.particles.emit({
+                        x: layout.tubPos.x + (Math.random() - 0.5) * 50,
+                        y: layout.tubPos.y - 30,
+                        text: "○", count: 1, lifeMs: 1100, size: 18 + Math.random() * 10,
+                    });
+                }
+                await this.wait(900);
+            }
+
+            this.creature.setWetness(1);
+
+            // Climb out + shake off.
+            await this.fadeJump(layout.tubPos.x - 60, layout.floorY + 30, 320);
+            this.creature.setPosition(layout.tubPos.x - 60, layout.floorY + 30);
+            this.creature.playAction("shake", 1200);
+            for (let i = 0; i < 12; i++) {
+                this.particles.emit({
+                    x: this.creature.container.x + (Math.random() - 0.5) * 60,
+                    y: this.creature.container.y - 30,
+                    text: "💧", count: 1, lifeMs: 700,
+                });
+                await this.wait(80);
+            }
+
+            // Drain water as the creature walks away.
+            await this.animateValue(1, 0, 600, (v) => this.bathroom.setWaterLevel(v));
+
+            // Fade back to bedroom.
+            await this.fadeTo(0.85);
+            this.switchScene("bedroom");
+            this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
+            await this.fadeTo(0);
+            this.bbState.hygiene = Math.min(100, this.bbState.hygiene + 40);
+        });
+    }
+
     public emitSneeze(): void {
         if (!this.isReady()) return;
         this.creature.playAction("sneeze", 1100);
@@ -325,6 +424,117 @@ export class Game {
         }
         this.creature.update(deltaMs, this.bbState);
         this.particles.update(deltaMs);
+    }
+
+    /** Move the creature in a parabolic arc (used for jumping into / out of the tub). */
+    private fadeJump(targetX: number, targetY: number, durationMs: number): Promise<void> {
+        const startX = this.creature.container.x;
+        const startY = this.creature.container.y;
+        return this.animateValue(0, 1, durationMs, (t) => {
+            const x = startX + (targetX - startX) * t;
+            const y = startY + (targetY - startY) * t - Math.sin(t * Math.PI) * 30;
+            this.creature.setPosition(x, y);
+        });
+    }
+
+    /** Generic eased value animator. */
+    private animateValue(
+        from: number, to: number, durationMs: number,
+        onUpdate: (value: number) => void,
+    ): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const start = performance.now();
+            const tick = () => {
+                if (this.destroyed) { resolve(); return; }
+                const t = Math.min(1, (performance.now() - start) / durationMs);
+                const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                onUpdate(from + (to - from) * eased);
+                if (t < 1) requestAnimationFrame(tick);
+                else resolve();
+            };
+            requestAnimationFrame(tick);
+        });
+    }
+
+    /** Cross-fade between scenes via the overlay. */
+    private fadeTo(alpha: number): Promise<void> {
+        const from = this.fadeOverlay.alpha;
+        return this.animateValue(from, alpha, 280, (v) => {
+            this.fadeOverlay.alpha = v;
+        });
+    }
+
+    private switchScene(kind: SceneKind): void {
+        if (kind === this.currentScene) return;
+        if (kind === "bathroom") {
+            this.rootContainer.removeChild(this.room.container);
+            if (!this.bathroomMounted) {
+                this.bathroom.fxLayer.addChild(this.particles.container);
+                this.bathroomMounted = true;
+            } else {
+                this.bathroom.fxLayer.addChild(this.particles.container);
+            }
+            this.rootContainer.addChildAt(this.bathroom.container, 0);
+            this.blackboard.bounds = this.computeBathroomBounds();
+        } else {
+            this.rootContainer.removeChild(this.bathroom.container);
+            this.room.fxLayer.addChild(this.particles.container);
+            this.rootContainer.addChildAt(this.room.container, 0);
+            this.blackboard.bounds = this.computeBounds(this.room.layout);
+        }
+        this.currentScene = kind;
+    }
+
+    private computeBathroomLayout(roomLayout: RoomLayout): BathroomLayout {
+        const tubW = 180;
+        const tubH = 70;
+        const tubX = roomLayout.width / 2 - tubW / 2;
+        const tubY = roomLayout.floorY + (roomLayout.height - roomLayout.floorY) * 0.45;
+        return {
+            width: roomLayout.width,
+            height: roomLayout.height,
+            floorY: roomLayout.floorY,
+            tubPos: { x: tubX + tubW / 2, y: tubY + tubH * 0.55 },
+            tubBounds: { x: tubX, y: tubY, w: tubW, h: tubH },
+        };
+    }
+
+    private computeBathroomBounds(): RoomBounds {
+        const layout = this.bathroom.layout;
+        return {
+            minX: 60,
+            maxX: layout.width - 60,
+            minY: layout.floorY + 14,
+            maxY: layout.height - 30,
+        };
+    }
+
+    private drawFadeOverlay(width: number, height: number): void {
+        this.fadeOverlay.clear();
+        this.fadeOverlay.rect(0, 0, width, height).fill(0x000000);
+    }
+
+    /** Tap on bowl/bed/toy in the room to trigger the matching action.
+     *  Uses hit areas tied to the layout positions. */
+    private attachSceneTaps(): void {
+        const room = this.room;
+        const layout = room.layout;
+        const make = (x: number, y: number, w: number, h: number, onTap: () => void) => {
+            const hit = new Container();
+            hit.eventMode = "static";
+            hit.cursor = "pointer";
+            // Provide a transparent graphics so hit-test has a shape.
+            const g = new Graphics();
+            g.rect(-w / 2, -h / 2, w, h).fill({ color: 0xffffff, alpha: 0.001 });
+            hit.addChild(g);
+            hit.x = x; hit.y = y;
+            hit.zIndex = 50;
+            hit.on("pointertap", () => onTap());
+            this.room.fgLayer.addChild(hit);
+        };
+        make(layout.bowlPos.x, layout.bowlPos.y, 60, 40, () => this.feed());
+        make(layout.bedPos.x, layout.bedPos.y, 110, 50, () => this.sleep());
+        make(layout.toyPos.x, layout.toyPos.y, 36, 36, () => this.play());
     }
 
     private computeLayout(): RoomLayout {
