@@ -44,6 +44,8 @@ def _state_response(companion: Companion) -> dict:
         "energy": companion.energy,
         "hygiene": companion.hygiene,
         "immunity": companion.immunity,
+        "bladder": companion.bladder,
+        "is_sleeping": companion.is_sleeping,
         "is_sick": companion.is_sick,
         "disease": companion.disease,
         "symptoms": sickness.symptoms(companion),
@@ -287,17 +289,26 @@ def _action_endpoint(action_fn):
             c = action_fn(request.user)
         except services.InComa:
             return _err("Companion is in a coma. Perform the revive ritual.", "in_coma", 409)
+        except services.IsSleeping:
+            return _err("Your companion is sleeping. Wake them first.", "is_sleeping", 409)
+        except services.NotSleeping:
+            return _err("Your companion is already awake.", "not_sleeping", 409)
+        except services.TooFull:
+            return _err("They aren't hungry right now.", "too_full", 409)
         except services.GameError as e:
             return _err(str(e))
         return _ok(c)
     return view
 
 
-feed = _action_endpoint(services.feed)
-play = _action_endpoint(services.play)
-sleep = _action_endpoint(services.sleep)
-pet = _action_endpoint(services.pet)
-wash = _action_endpoint(services.wash)
+feed   = _action_endpoint(services.feed)
+play   = _action_endpoint(services.play)
+sleep  = _action_endpoint(services.sleep)
+pet    = _action_endpoint(services.pet)
+wash   = _action_endpoint(services.wash)
+toilet = _action_endpoint(services.toilet)
+wake   = _action_endpoint(services.wake)
+scold  = _action_endpoint(services.scold)
 
 
 @login_required

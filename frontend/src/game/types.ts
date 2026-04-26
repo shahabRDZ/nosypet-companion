@@ -21,7 +21,11 @@ export type ActionName =
     | "eat"
     | "play_with_toy"
     | "wash"
-    | "shake";
+    | "shake"
+    | "beg"           // sit + look at camera + paws up
+    | "potty_dance"   // squirming, holding
+    | "cry"           // sad face + fake tears
+    | "flinch";       // brief recoil after a scold
 
 export interface CreatureState {
     phenotype: Phenotype;
@@ -30,6 +34,8 @@ export interface CreatureState {
     happiness: number;
     energy: number;
     hygiene: number;
+    bladder: number;       // 0-100, higher = needs to go
     sick: boolean;
     inComa: boolean;
+    sleeping: boolean;
 }

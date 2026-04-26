@@ -38,6 +38,31 @@ export function GamePage() {
         g.mount(hostRef.current, live.state.phenotype, live.state.name).catch((err) => {
             console.error("Game mount failed:", err);
         });
+
+        // Gesture routing: tap wakes a sleeping pet, otherwise pets.
+        g.onTap = () => {
+            const c = live.state;
+            if (c?.is_sleeping) {
+                void live.wake();
+                g.wakeUp();
+            } else {
+                g.pet();
+                void live.pet();
+            }
+        };
+        // Long-press = strong pet (counts as pet, more affection).
+        g.onLongPress = () => {
+            if (live.state?.is_sleeping) return;
+            g.pet();
+            void live.pet();
+        };
+        // Hard swipe-down = scold (discipline +, affection -).
+        g.onSwipeDown = () => {
+            if (live.state?.is_sleeping) return;
+            g.scold();
+            void live.scold();
+        };
+
         return () => {
             g.unmount();
             if (gameRef.current === g) gameRef.current = null;
@@ -52,8 +77,10 @@ export function GamePage() {
             happiness: live.state.happiness,
             energy: live.state.energy,
             hygiene: live.state.hygiene,
+            bladder: live.state.bladder,
             is_sick: live.state.is_sick,
             is_in_coma: live.state.is_in_coma,
+            is_sleeping: live.state.is_sleeping,
         });
     }, [live.state]);
 
@@ -106,17 +133,40 @@ export function GamePage() {
         }
     }
 
+    const sleeping = !!c.is_sleeping;
+    const bladder = c.bladder ?? 0;
     const actions: Action[] = [
         { key: "feed",  icon: "🍔", label: "Feed",  accent: "#ff8a5b",
+          disabled: sleeping || (c.hunger ?? 0) >= 90,
           onClick: () => { sound.unlock(); sound.eat(); void gameRef.current?.feed(); void live.feed(); } },
         { key: "play",  icon: "🎾", label: "Play",  accent: "#ffd166",
+          disabled: sleeping,
           onClick: () => { sound.unlock(); sound.play(); void gameRef.current?.play(); void live.play(); } },
-        { key: "sleep", icon: "💤", label: "Sleep", accent: "#6dd3ff",
-          onClick: () => { sound.unlock(); sound.sleep(); void gameRef.current?.sleep(); void live.sleep(); } },
+        { key: "toilet", icon: "🚽", label: "Toilet", accent: "#7fcfa0",
+          hidden: bladder < 50 && !sleeping ? bladder < 50 : false,
+          disabled: sleeping,
+          onClick: () => { sound.unlock(); void gameRef.current?.toilet(); void live.toilet(); } },
+        { key: "sleep", icon: sleeping ? "🌙" : "💤", label: sleeping ? "Wake" : "Sleep", accent: "#6dd3ff",
+          onClick: () => {
+              sound.unlock();
+              if (sleeping) {
+                  void live.wake();
+                  gameRef.current?.wakeUp();
+              } else {
+                  sound.sleep();
+                  void gameRef.current?.sleep();
+                  void live.sleep();
+              }
+          } },
         { key: "wash",  icon: "🛁", label: "Wash",  accent: "#a78bfa",
+          disabled: sleeping,
           onClick: () => { sound.unlock(); sound.nuzzle(); void gameRef.current?.wash(); void live.wash(); } },
         { key: "pet",   icon: "🤍", label: "Pet",   accent: "#ff7eb3",
+          disabled: sleeping,
           onClick: () => { sound.unlock(); sound.pet(); gameRef.current?.pet(); void live.pet(); } },
+        { key: "scold", icon: "🚫", label: "Scold", accent: "#ef4444",
+          disabled: sleeping,
+          onClick: () => { sound.unlock(); sound.error(); gameRef.current?.scold(); void live.scold(); } },
         { key: "heal",  icon: "✨", label: "Heal",  accent: "#c084fc",
           hidden: !needsHeal && !c.is_in_coma,
           onClick: () => { sound.unlock(); sound.heal(); void live.heal(); } },
@@ -124,8 +174,11 @@ export function GamePage() {
 
     const moodLine = (() => {
         if (!c.is_alive) return "Unconscious. Heal to revive.";
+        if (c.is_sleeping) return "Sleeping... tap to wake 🌙";
+        if ((c.bladder ?? 0) >= 90) return "About to have an accident! 🚽";
+        if ((c.bladder ?? 0) >= 70) return "Needs the toilet 💧";
         if (c.is_sick) return `${c.disease ?? "feeling under the weather"}`;
-        if ((c.hunger ?? 100) < 20) return "Starving";
+        if ((c.hunger ?? 100) < 20) return "Starving — please feed 🍔";
         if ((c.energy ?? 100) < 20) return "Exhausted";
         if ((c.happiness ?? 100) < 20) return "Bored";
         if ((c.overall ?? 0) > 80) return "Living the good life ✨";

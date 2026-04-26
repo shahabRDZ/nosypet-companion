@@ -25,14 +25,16 @@ HEAL_COIN_COST = 0  # coins were a v1 concept; heal is free in v2 (skill-based r
 
 # Trait deltas per action. Positive moves toward 100, negative toward -100.
 ACTION_TRAITS = {
-    "feed":  {"affection": 1,  "discipline": 1},
-    "play":  {"playfulness": 2, "happiness_event": 0},
-    "sleep": {"discipline": 1},
-    "pet":   {"affection": 1},
-    "heal":  {"affection": 2},
-    "talk":  {"curiosity": 1},
+    "feed":   {"affection": 1, "discipline": 1},
+    "play":   {"playfulness": 2},
+    "sleep":  {"discipline": 1},
+    "pet":    {"affection": 1},
+    "heal":   {"affection": 2},
+    "talk":   {"curiosity": 1},
     "neglect_24h": {"affection": -2, "confidence": -1},
-    "scold": {"discipline": 1, "confidence": -1},
+    "scold":  {"discipline": 2, "affection": -1, "confidence": -1},
+    "toilet": {"discipline": 2},
+    "wake":   {"affection": -1},
 }
 
 
@@ -41,6 +43,18 @@ class GameError(Exception):
 
 
 class InComa(GameError):
+    pass
+
+
+class TooFull(GameError):
+    pass
+
+
+class IsSleeping(GameError):
+    pass
+
+
+class NotSleeping(GameError):
     pass
 
 
@@ -133,6 +147,10 @@ def _start_action(user, *, allow_in_coma: bool = False) -> Companion:
 @transaction.atomic
 def feed(user) -> Companion:
     c = _start_action(user)
+    if c.is_sleeping:
+        raise IsSleeping()
+    if c.hunger >= 90:
+        raise TooFull()
     c.hunger = _clamp(c.hunger + 25)
     c.energy = _clamp(c.energy + 5)
     c.touch_interaction()
@@ -145,6 +163,8 @@ def feed(user) -> Companion:
 @transaction.atomic
 def play(user) -> Companion:
     c = _start_action(user)
+    if c.is_sleeping:
+        raise IsSleeping()
     c.happiness = _clamp(c.happiness + 25)
     c.hunger = _clamp(c.hunger - 10)
     c.energy = _clamp(c.energy - 15)
@@ -157,13 +177,68 @@ def play(user) -> Companion:
 
 @transaction.atomic
 def sleep(user) -> Companion:
+    """Enter persistent sleep state. Returns immediately; the companion
+    keeps sleeping in the background (energy regens, mood-stats decay
+    slowly) until wake() is called or energy hits 100."""
     c = _start_action(user)
-    c.energy = _clamp(c.energy + 35)
-    c.hunger = _clamp(c.hunger - 8)
+    if c.is_sleeping:
+        return c  # idempotent
+    c.is_sleeping = True
+    c.sleep_started_at = timezone.now()
     c.touch_interaction()
     c.save()
     _apply_trait_deltas(c, ACTION_TRAITS["sleep"])
     _record(c, "sleep", {})
+    return c
+
+
+@transaction.atomic
+def wake(user) -> Companion:
+    """Tap to wake. Slight affection penalty if cut short while energy
+    is still low (companion is grumpy)."""
+    c = _locked_companion(user)
+    if not c.is_sleeping:
+        raise NotSleeping()
+    cut_short = c.energy < 60
+    c.is_sleeping = False
+    c.sleep_started_at = None
+    c.touch_interaction()
+    c.save()
+    if cut_short:
+        _apply_trait_deltas(c, ACTION_TRAITS["wake"])
+    _record(c, "wake", {"cut_short": cut_short})
+    return c
+
+
+@transaction.atomic
+def toilet(user) -> Companion:
+    """Take the companion to the toilet. Resets bladder pressure and
+    grants a discipline boost. Cannot be done while sleeping."""
+    c = _start_action(user)
+    if c.is_sleeping:
+        raise IsSleeping()
+    relieved = c.bladder
+    c.bladder = 0
+    c.happiness = _clamp(c.happiness + 5)
+    c.touch_interaction()
+    c.save()
+    _apply_trait_deltas(c, ACTION_TRAITS["toilet"])
+    _record(c, "toilet", {"relieved": relieved})
+    return c
+
+
+@transaction.atomic
+def scold(user) -> Companion:
+    """Mild discipline action. Companion drops happiness/affection but
+    learns. Useful after an accident or repeated misbehaviour."""
+    c = _start_action(user)
+    if c.is_sleeping:
+        raise IsSleeping()
+    c.happiness = _clamp(c.happiness - 8)
+    c.touch_interaction()
+    c.save()
+    _apply_trait_deltas(c, ACTION_TRAITS["scold"])
+    _record(c, "scold", {})
     return c
 
 

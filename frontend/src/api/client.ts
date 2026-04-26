@@ -90,11 +90,14 @@ export const api = {
         request<Companion>("/companion/rename/", { method: "POST", body: JSON.stringify(body) }),
 
     // Actions
-    feed:  () => request<Companion>("/companion/feed/",  { method: "POST" }),
-    play:  () => request<Companion>("/companion/play/",  { method: "POST" }),
-    sleep: () => request<Companion>("/companion/sleep/", { method: "POST" }),
-    pet:   () => request<Companion>("/companion/pet/",   { method: "POST" }),
-    wash:  () => request<Companion>("/companion/wash/",  { method: "POST" }),
+    feed:   () => request<Companion>("/companion/feed/",   { method: "POST" }),
+    play:   () => request<Companion>("/companion/play/",   { method: "POST" }),
+    sleep:  () => request<Companion>("/companion/sleep/",  { method: "POST" }),
+    pet:    () => request<Companion>("/companion/pet/",    { method: "POST" }),
+    wash:   () => request<Companion>("/companion/wash/",   { method: "POST" }),
+    toilet: () => request<Companion>("/companion/toilet/", { method: "POST" }),
+    wake:   () => request<Companion>("/companion/wake/",   { method: "POST" }),
+    scold:  () => request<Companion>("/companion/scold/",  { method: "POST" }),
     heal:  (kind: "medicine" | "soup" | "vet" = "medicine") =>
         request<Companion>("/companion/heal/", { method: "POST", body: JSON.stringify({ kind }) }),
     revive: () => request<Companion>("/companion/revive/", { method: "POST" }),

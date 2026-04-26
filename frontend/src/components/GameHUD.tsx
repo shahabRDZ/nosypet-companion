@@ -1,7 +1,7 @@
 /**
  * Top HUD strip that floats above the game canvas. Shows the
- * companion's portrait, name + level, four stat dots with ring fills,
- * and a coin pill. Stat values come from the live state hook.
+ * companion's portrait, name + level, and a row of stat rings.
+ * Bladder fills as pressure builds (red when urgent).
  */
 import { CompanionPortrait } from "./CompanionPortrait";
 import type { Companion } from "../types/companion";
@@ -10,11 +10,20 @@ interface Props {
     companion: Companion;
 }
 
-const STAT_KEYS = [
-    { key: "hunger" as const,    label: "Hunger",    color: "#ff8a5b", icon: "🍔" },
-    { key: "happiness" as const, label: "Happiness", color: "#ffd166", icon: "😊" },
-    { key: "energy" as const,    label: "Energy",    color: "#6dd3ff", icon: "⚡" },
-    { key: "hygiene" as const,   label: "Hygiene",   color: "#a78bfa", icon: "🛁" },
+interface StatDef {
+    key: "hunger" | "happiness" | "energy" | "hygiene" | "bladder";
+    label: string;
+    color: string;
+    icon: string;
+    invert?: boolean;
+}
+
+const STAT_KEYS: StatDef[] = [
+    { key: "hunger",    label: "Hunger",    color: "#ff8a5b", icon: "🍔" },
+    { key: "happiness", label: "Happiness", color: "#ffd166", icon: "😊" },
+    { key: "energy",    label: "Energy",    color: "#6dd3ff", icon: "⚡" },
+    { key: "hygiene",   label: "Hygiene",   color: "#a78bfa", icon: "🛁" },
+    { key: "bladder",   label: "Bladder",   color: "#7fcfa0", icon: "💧", invert: true },
 ];
 
 export function GameHUD({ companion }: Props) {
@@ -34,11 +43,18 @@ export function GameHUD({ companion }: Props) {
             </div>
 
             <div className="hud-stats" role="group" aria-label="Vital stats">
-                {STAT_KEYS.map(({ key, label, color, icon }) => {
-                    const value = companion[key] ?? 0;
+                {STAT_KEYS.map(({ key, label, color, icon, invert }) => {
+                    const raw = companion[key] ?? 0;
+                    // For inverted stats (bladder), the *fill* tracks
+                    // the raw value (so a full bladder shows a full
+                    // ring), and we shift the colour to red when urgent.
+                    const fill = invert ? raw : raw;
+                    const ringColor = invert
+                        ? raw >= 70 ? "#ef4444" : raw >= 40 ? "#ffae3a" : color
+                        : color;
                     return (
-                        <div key={key} className="hud-stat" title={`${label}: ${value}`}>
-                            <Ring value={value} color={color} icon={icon} />
+                        <div key={key} className="hud-stat" title={`${label}: ${raw}`}>
+                            <Ring value={fill} color={ringColor} icon={icon} />
                         </div>
                     );
                 })}

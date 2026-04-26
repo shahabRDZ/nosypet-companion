@@ -39,6 +39,12 @@ import type { ActionName, CreatureState, RoomBounds } from "./types";
 
 type SceneKind = "bedroom" | "bathroom" | "kitchen" | "garden" | "living" | "nursery";
 
+function haptic(pattern: number | number[]): void {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        try { navigator.vibrate(pattern); } catch { /* iOS silently rejects */ }
+    }
+}
+
 interface SceneEntry {
     container: Container;
     fxLayer: Container;
@@ -162,7 +168,7 @@ export class Game {
         // Direct manipulation: tap bowl/bed/toy/tub directly.
         this.attachSceneTaps();
 
-        // Initial state. In Phase 3 these come from the server.
+        // Initial state. The server overwrites these on first poll.
         this.bbState = {
             phenotype,
             name,
@@ -170,8 +176,10 @@ export class Game {
             happiness: 75,
             energy: 75,
             hygiene: 80,
+            bladder: 20,
             sick: false,
             inComa: false,
+            sleeping: false,
         };
         // Speed shaped by temperament so a calm pet drifts and a wild
         // one sprints. The DNA seed already chose temperament.
@@ -336,6 +344,7 @@ export class Game {
 
     public pet(): void {
         if (!this.isReady()) return;
+        if (this.bbState.sleeping) return;
         this.creature.playAction("look_at_camera", 1200);
         this.bbState.happiness = Math.min(100, this.bbState.happiness + 5);
         this.particles.emit({
@@ -344,6 +353,68 @@ export class Game {
             text: "💕", count: 3, lifeMs: 1100,
         });
         this.creature.say("That feels nice", 1800);
+        haptic(20);
+    }
+
+    public scold(): void {
+        if (!this.isReady() || this.bbState.sleeping) return;
+        this.creature.playAction("flinch", 900);
+        this.particles.emit({
+            x: this.creature.container.x,
+            y: this.creature.container.y - 30,
+            text: "😢", count: 2, lifeMs: 1300,
+        });
+        this.creature.say("...sorry", 1500);
+        haptic([15, 30, 15]);
+    }
+
+    public toilet(): Promise<void> {
+        return this.enqueue(async () => {
+            await this.slideToScene("bathroom");
+            const layout = this.bathroom.layout;
+            this.creature.setPosition(layout.width * 0.18, layout.floorY + 30);
+            this.creature.setFacing(1);
+            // Walk to a position next to the tub (bathroom doubles as
+            // the toilet location until we add a separate fixture).
+            this.blackboard.target = {
+                x: layout.tubPos.x - 70, y: layout.floorY + 30,
+                arrivedRadius: 8, arrived: false,
+            };
+            await this.waitForArrival();
+            if (!this.isReady()) return;
+            this.creature.playAction("sit", 2200);
+            // Relief particle + small sigh
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 20,
+                text: "💧", count: 2, lifeMs: 900, upward: false,
+            });
+            this.creature.say("phew", 1400);
+            await this.wait(2200);
+            this.bbState.bladder = 0;
+            await this.slideToScene("bedroom");
+            this.creature.setPosition(this.room.layout.width / 2, this.room.layout.floorY + 30);
+        });
+    }
+
+    public wakeUp(): void {
+        if (!this.isReady() || !this.bbState.sleeping) return;
+        this.bbState.sleeping = false;
+        this.creature.playAction("yawn", 1400);
+        this.creature.say("...mm?", 1500);
+        haptic(30);
+    }
+
+    public triggerAccident(): void {
+        if (!this.isReady()) return;
+        this.creature.playAction("flinch", 1100);
+        this.particles.emit({
+            x: this.creature.container.x,
+            y: this.creature.container.y + 6,
+            text: "💩", count: 1, lifeMs: 2200, upward: false, size: 24,
+        });
+        this.creature.say("...uh oh", 2000);
+        this.bbState.bladder = 0;
+        haptic([10, 80, 10]);
     }
 
     /** Navigate to the living room. */
@@ -478,16 +549,20 @@ export class Game {
         happiness?: number;
         energy?: number;
         hygiene?: number;
+        bladder?: number;
         is_sick?: boolean;
         is_in_coma?: boolean;
+        is_sleeping?: boolean;
     }): void {
         if (!this.bbState) return;
         if (s.hunger !== undefined) this.bbState.hunger = s.hunger;
         if (s.happiness !== undefined) this.bbState.happiness = s.happiness;
         if (s.energy !== undefined) this.bbState.energy = s.energy;
         if (s.hygiene !== undefined) this.bbState.hygiene = s.hygiene;
+        if (s.bladder !== undefined) this.bbState.bladder = s.bladder;
         if (s.is_sick !== undefined) this.bbState.sick = s.is_sick;
         if (s.is_in_coma !== undefined) this.bbState.inComa = s.is_in_coma;
+        if (s.is_sleeping !== undefined) this.bbState.sleeping = s.is_sleeping;
     }
 
     public getStateSnapshot(): CreatureState {
@@ -513,7 +588,11 @@ export class Game {
         this.ambient.setMode(isNight ? "night" : "day");
         this.ambient.update(deltaMs);
         this.updateHotspotGlows(deltaMs);
-        this.tree.tick(deltaMs, this.blackboard);
+        this.driveNeeds(deltaMs);
+        // BT only ticks when the companion is awake.
+        if (!this.bbState.sleeping) {
+            this.tree.tick(deltaMs, this.blackboard);
+        }
         if (this.cursor) {
             const local = this.creature.container.toLocal({ x: this.cursor.x, y: this.cursor.y });
             this.creature.lookAt(local.x, local.y);
@@ -758,16 +837,93 @@ export class Game {
 
     /** Track elapsed time for animations. */
     private elapsed = 0;
+    private nextNeedNagAt = 0;
+    private bladderWasFull = false;
+
+    /** Auto-trigger begging / potty dancing / crying based on stats. */
+    private driveNeeds(_deltaMs: number): void {
+        if (!this.isReady()) return;
+        const s = this.bbState;
+
+        // Sleeping: pin to sleep animation, emit Z particles slowly.
+        if (s.sleeping) {
+            this.creature.playAction("sleep", 1500);
+            if (this.elapsed - this.nextNeedNagAt > 0) {
+                this.nextNeedNagAt = this.elapsed + 2200;
+                this.particles.emit({
+                    x: this.creature.container.x + 22,
+                    y: this.creature.container.y - 30,
+                    text: "Z", count: 1, lifeMs: 1500, size: 22,
+                });
+            }
+            return;
+        }
+
+        // Accident detection — server flips bladder to 0 and we want
+        // to play the local accident animation just once.
+        if (s.bladder >= 100) {
+            if (!this.bladderWasFull) {
+                this.bladderWasFull = true;
+                this.triggerAccident();
+            }
+            return;
+        }
+        if (s.bladder < 90) this.bladderWasFull = false;
+
+        // Don't override an action that is currently playing.
+        if (this.creature["currentAction"] !== "idle" && this.creature["currentAction"] !== "walk") {
+            return;
+        }
+
+        if (this.elapsed < this.nextNeedNagAt) return;
+
+        // Priority: bladder > hunger > happiness.
+        if (s.bladder >= 70) {
+            this.creature.playAction("potty_dance", 1500);
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 50,
+                text: "💧", count: 1, lifeMs: 1100,
+            });
+            this.creature.say("I need to go!", 2200);
+            this.nextNeedNagAt = this.elapsed + 5000;
+            haptic([10, 50, 10]);
+            return;
+        }
+        if (s.hunger < 25) {
+            this.creature.playAction("beg", 1800);
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 40,
+                text: "🍞", count: 1, lifeMs: 1100,
+            });
+            this.creature.say("I'm hungry...", 2200);
+            this.nextNeedNagAt = this.elapsed + 6000;
+            haptic([10, 40]);
+            return;
+        }
+        if (s.happiness < 25) {
+            this.creature.playAction("cry", 1500);
+            this.particles.emit({
+                x: this.creature.container.x, y: this.creature.container.y - 30,
+                text: "😢", count: 2, lifeMs: 1200,
+            });
+            this.nextNeedNagAt = this.elapsed + 8000;
+            return;
+        }
+    }
 
     private computeLayout(): RoomLayout {
         const width = this.app.canvas.width / (window.devicePixelRatio || 1);
         const height = this.app.canvas.height / (window.devicePixelRatio || 1);
-        const floorY = height * 0.55;
+        const floorY = height * 0.58;
+        const usableY = height - floorY;
         return {
             width, height, floorY,
-            bowlPos: { x: width * 0.18, y: floorY + (height - floorY) * 0.55 },
-            bedPos:  { x: width * 0.82, y: floorY + (height - floorY) * 0.55 },
-            toyPos:  { x: width * 0.42, y: floorY + (height - floorY) * 0.78 },
+            // Bowl bottom-right between dresser (left) and plant (far right).
+            bowlPos: { x: width * 0.30, y: floorY + usableY * 0.7 },
+            // Bed in the centre-left of the floor, below wall art.
+            bedPos:  { x: width * 0.55, y: floorY + usableY * 0.42 },
+            // Toy bottom-centre, on the rug.
+            toyPos:  { x: width * 0.5,  y: floorY + usableY * 0.85 },
         };
     }
 
@@ -882,48 +1038,61 @@ export class Game {
         ]);
     }
 
+    /** Outside listeners (set by the React page). */
+    public onTap?: () => void;
+    public onLongPress?: () => void;
+    public onSwipeDown?: () => void;
+
     private attachInput(): void {
         this.app.stage.eventMode = "static";
         this.creature.container.eventMode = "static";
         this.creature.container.cursor = "pointer";
-
-        // Disable native gestures (context menu, scroll) on the canvas
-        // so touch holds reliably register as long-press.
         this.app.canvas.style.touchAction = "none";
 
-        // Track cursor for the eye-tracking effect.
         this.app.stage.on("globalpointermove", (e) => {
             this.cursor = { x: e.global.x, y: e.global.y };
         });
 
         let pressTimer: number | undefined;
+        let downX = 0, downY = 0, downAt = 0;
         let didLong = false;
-        this.creature.container.on("pointerdown", () => {
+
+        const onDown = (e: { global: { x: number; y: number } }) => {
+            downX = e.global.x;
+            downY = e.global.y;
+            downAt = performance.now();
             didLong = false;
             pressTimer = window.setTimeout(() => {
-                this.pet();
                 pressTimer = undefined;
                 didLong = true;
-            }, 320);
-        });
-        const cancel = () => {
+                this.onLongPress?.();
+                haptic([15, 30, 15]);
+            }, 600);
+        };
+
+        const onUp = (e?: { global: { x: number; y: number } }) => {
             if (pressTimer !== undefined) {
                 clearTimeout(pressTimer);
                 pressTimer = undefined;
-                if (!didLong) {
-                    // Short tap = nuzzle
-                    this.creature.playAction("look_at_camera", 800);
-                    if (this.bbState) {
-                        this.bbState.happiness = Math.min(100, this.bbState.happiness + 1);
-                    }
-                    this.particles.emit({
-                        x: this.creature.container.x, y: this.creature.container.y - 50,
-                        text: "💕", count: 1, lifeMs: 1000,
-                    });
+            }
+            if (didLong) return;
+            if (e) {
+                const dx = e.global.x - downX;
+                const dy = e.global.y - downY;
+                const elapsed = performance.now() - downAt;
+                // Hard swipe down = scold.
+                if (dy > 70 && Math.abs(dy) > Math.abs(dx) * 1.4 && elapsed < 500) {
+                    this.onSwipeDown?.();
+                    haptic([15, 50]);
+                    return;
                 }
             }
+            this.onTap?.();
+            haptic(15);
         };
-        this.creature.container.on("pointerup", cancel);
-        this.creature.container.on("pointerupoutside", cancel);
+
+        this.creature.container.on("pointerdown", onDown);
+        this.creature.container.on("pointerup", onUp);
+        this.creature.container.on("pointerupoutside", () => onUp());
     }
 }
