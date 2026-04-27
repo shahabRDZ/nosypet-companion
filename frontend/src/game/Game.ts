@@ -14,10 +14,12 @@
  *   periodically synced to the backend in Phase 3.
  */
 import { Application, Container, Graphics } from "pixi.js";
+import { BloomFilter } from "pixi-filters";
 
 import type { Phenotype } from "../types/companion";
 import { AmbientLayer } from "./Ambient";
 import { Bathroom, type BathroomLayout } from "./Bathroom";
+import { Camera } from "./Camera";
 import {
     Action,
     Cooldown,
@@ -77,6 +79,8 @@ interface GameBlackboard extends BlackboardLike {
 export class Game {
     public readonly app: Application;
     private rootContainer: Container;
+    private camera!: Camera;
+    private flashOverlay!: Graphics;
     private room!: Room;
     private bathroom!: Bathroom;
     private kitchen!: Kitchen;
@@ -127,6 +131,27 @@ export class Game {
         }
         if (host.isConnected) host.appendChild(this.app.canvas);
         this.app.stage.addChild(this.rootContainer);
+
+        const w = this.app.canvas.width / (window.devicePixelRatio || 1);
+        const h = this.app.canvas.height / (window.devicePixelRatio || 1);
+
+        // Camera transforms the world container.
+        this.camera = new Camera(this.rootContainer);
+        this.camera.setViewport(w, h);
+
+        // Bloom for dreamy halos around bright accents (sun, eyes, particles).
+        try {
+            const bloom = new BloomFilter({ strength: 6, kernelSize: 9, quality: 4 });
+            this.rootContainer.filters = [bloom];
+        } catch {
+            // Filter unavailable in this build; degrade gracefully.
+        }
+
+        // Flash overlay outside the camera so it always covers the canvas.
+        this.flashOverlay = new Graphics();
+        this.flashOverlay.alpha = 0;
+        this.flashOverlay.eventMode = "none";
+        this.app.stage.addChild(this.flashOverlay);
 
         const layout = this.computeLayout();
         this.room = new Room(layout);
@@ -282,11 +307,14 @@ export class Game {
             if (!this.isReady()) return;
             this.creature.playAction("eat", 2400);
             this.bbState.hunger = Math.min(100, this.bbState.hunger + 25);
+            this.camera.punchIn(1.06, 240);
+            this.camera.flash(0xffd166, 0.18, 260);
             for (let i = 0; i < 4; i++) {
                 this.particles.emit({
                     x: this.creature.container.x + 10, y: this.creature.container.y - 20,
                     text: "🍞", count: 1, lifeMs: 900,
                 });
+                this.camera.shakeFor(2, 80);
                 await this.wait(450);
             }
             await this.slideToScene("bedroom");
@@ -308,11 +336,14 @@ export class Game {
             this.creature.playAction("play_with_toy", 2500);
             this.bbState.happiness = Math.min(100, this.bbState.happiness + 25);
             this.bbState.energy = Math.max(0, this.bbState.energy - 10);
+            this.camera.punchIn(1.05, 220);
+            this.camera.flash(0xff7eb3, 0.15, 240);
             for (let i = 0; i < 5; i++) {
                 this.particles.emit({
                     x: this.creature.container.x, y: this.creature.container.y - 30,
                     text: "❤️", count: 1, lifeMs: 1200,
                 });
+                if (i === 2) this.camera.shakeFor(3, 100);
                 await this.wait(280);
             }
             await this.slideToScene("bedroom");
@@ -353,6 +384,10 @@ export class Game {
             text: "💕", count: 3, lifeMs: 1100,
         });
         this.creature.say("That feels nice", 1800);
+        // Juice: subtle zoom-in pulse + hit-stop for tactile feedback.
+        this.camera.punchIn(1.04, 180);
+        this.camera.hitStop(40);
+        this.camera.flash(0xff7eb3, 0.15, 200);
         haptic(20);
     }
 
@@ -365,6 +400,10 @@ export class Game {
             text: "😢", count: 2, lifeMs: 1300,
         });
         this.creature.say("...sorry", 1500);
+        // Hard, jagged feedback: shake + dim red flash + hit-stop.
+        this.camera.shakeFor(6, 220);
+        this.camera.hitStop(60);
+        this.camera.flash(0xef4444, 0.25, 320);
         haptic([15, 30, 15]);
     }
 
@@ -414,6 +453,8 @@ export class Game {
         });
         this.creature.say("...uh oh", 2000);
         this.bbState.bladder = 0;
+        this.camera.shakeFor(8, 360);
+        this.camera.flash(0x6b3a1a, 0.25, 420);
         haptic([10, 80, 10]);
     }
 
@@ -573,6 +614,24 @@ export class Game {
 
     private tick(deltaMs: number): void {
         this.elapsed += deltaMs;
+
+        // Camera step (returns true if hit-stopped: skip world update).
+        const frozen = this.camera.update(deltaMs);
+
+        // Render the flash overlay over the entire viewport.
+        const flash = this.camera.getFlash();
+        if (flash.active) {
+            const w = this.app.canvas.width / (window.devicePixelRatio || 1);
+            const h = this.app.canvas.height / (window.devicePixelRatio || 1);
+            this.flashOverlay.clear();
+            this.flashOverlay.rect(0, 0, w, h).fill({ color: flash.color, alpha: flash.alpha });
+            this.flashOverlay.alpha = 1;
+        } else {
+            this.flashOverlay.alpha = 0;
+        }
+
+        if (frozen) return;
+
         // Decay over real time, very slow.
         const minutes = deltaMs / 60000;
         this.bbState.hunger = Math.max(0, this.bbState.hunger - 1.2 * minutes);

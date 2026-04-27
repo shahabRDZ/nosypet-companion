@@ -112,9 +112,19 @@ export class Room {
     private draw(): void {
         const { width, height, floorY, bowlPos, bedPos, toyPos } = this.layout;
 
-        // Wall (back)
+        // Wall (back) — vertical gradient (lighter at top, warmer near floor)
         this.wall.clear();
         this.wall.rect(0, 0, width, floorY).fill(0xfbe9d3);
+        // Subtle vertical gradient via alpha layers (cheap, looks expensive).
+        for (let i = 0; i < 12; i++) {
+            this.wall.rect(0, i * (floorY / 12), width, floorY / 12)
+                .fill({ color: 0xc89a6e, alpha: 0.025 + (i / 12) * 0.06 });
+        }
+        // Wall texture: very subtle vertical paint strokes.
+        for (let x = 0; x < width; x += 8) {
+            this.wall.rect(x, 0, 1, floorY)
+                .fill({ color: 0x000000, alpha: 0.025 });
+        }
 
         // Wainscot (lower wall band)
         const wainHeight = 28;
